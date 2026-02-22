@@ -397,11 +397,18 @@ async function loadCheckIns() {
 }
 
 // ============ RENDER ============
+// Helper: get thumbnail from any field name (backward compatible with old sheet columns)
+function getThumb(item) {
+    const t = item.thumbnail || item.imageUrl || item.thumbnailUrl || '';
+    // Only return if it looks like a data URL or valid image URL
+    if (t && (t.startsWith('data:image') || t.startsWith('http'))) return t;
+    return '';
+}
 function renderHomeGallery(list) {
     const c = document.getElementById('homeGallery');
     if (!list || !list.length) { c.innerHTML = '<div class="empty-state"><span>🏞️</span><p>ยังไม่มีข้อมูล — เริ่มถ่ายภาพเลย!</p></div>'; return; }
     c.innerHTML = list.slice(0, 5).map(i => {
-        const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || ''), t = i.thumbnail || '';
+        const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || ''), t = getThumb(i);
         return `<div class="gallery-card-inline" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')">
             ${t ? `<img class="inline-thumb" src="${t}" onerror="this.outerHTML='<div class=\\'inline-icon\\'>📍</div>'">` : '<div class="inline-icon">📍</div>'}
             <div class="inline-info"><div class="inline-name">${n}</div><div class="inline-date">${formatDate(i.timestamp)}</div>
@@ -440,7 +447,7 @@ function renderGalleryPage() {
 
     c.innerHTML = pageItems.map(i => {
         const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || '');
-        const t = i.thumbnail || '', d = escapeHtml(i.description || '');
+        const t = getThumb(i), d = escapeHtml(i.description || '');
         const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
         return `<div class="gallery-card" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')">
             ${t ? `<img class="gallery-card-image" src="${t}" loading="lazy" onerror="this.outerHTML='<div class=gallery-card-image style=display:flex;align-items:center;justify-content:center;font-size:32px>📍</div>'">`
@@ -529,7 +536,7 @@ function addCheckInMarkers() {
         const lat = Number(i.latitude), lng = Number(i.longitude);
         if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
         const url = `https://www.google.com/maps?q=${lat},${lng}`;
-        const t = i.thumbnail || '';
+        const t = getThumb(i);
         const m = L.marker([lat, lng]).addTo(appState.mainMap);
         m.bindPopup(`<div class="popup-title">📍 ${escapeHtml(i.locationName)}</div>
             <div class="popup-date">${formatDate(i.timestamp)}</div>

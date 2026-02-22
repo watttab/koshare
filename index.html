@@ -208,6 +208,18 @@
                     <!-- Generated Image Preview -->
                     <div class="preview-area" id="previewArea" style="display:none">
                         <img id="generatedImage" class="generated-image">
+
+                        <!-- SAVE TO MAP (prominent, first action) -->
+                        <button class="btn-save-map-hero" onclick="saveToMap()">
+                            <span class="save-icon">📌</span>
+                            <span class="save-text">
+                                <strong>บันทึกลงแผนที่</strong>
+                                <small>บันทึกสถานที่พร้อมภาพลงระบบ</small>
+                            </span>
+                        </button>
+
+                        <div class="share-divider"><span>แชร์ภาพ</span></div>
+
                         <div class="share-actions">
                             <button class="btn btn-success" onclick="downloadImage()">
                                 💾 บันทึกภาพ
@@ -230,9 +242,6 @@
                                 LINE
                             </button>
                         </div>
-                        <button class="btn btn-outline btn-save-map" onclick="saveToMap()">
-                            📌 บันทึกลงแผนที่
-                        </button>
                     </div>
                 </div>
             </div>
