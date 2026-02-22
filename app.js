@@ -12,7 +12,7 @@ const appState = {
     currentPage: 'home',
     photo: null,
     photoDataURL: null,
-    photoCompressed: null,
+    photoThumbnail: null, // micro thumbnail ~10KB for storage
     latitude: null,
     longitude: null,
     miniMap: null,
@@ -22,7 +22,6 @@ const appState = {
     generatedImageDataURL: null,
     checkIns: [],
     shareCount: parseInt(localStorage.getItem('koShareCount') || '0'),
-    // Gallery pagination
     galleryPage: 1,
     galleryItemsPerPage: 10,
     galleryFiltered: [],
@@ -73,61 +72,7 @@ async function callGAS(action, data = null, requireKey = false) {
     return JSON.parse(text);
 }
 
-// POST image via hidden form (handles GAS 302 redirect correctly)
-function postImageToGAS(checkInId, imageBase64, locationName) {
-    return new Promise((resolve, reject) => {
-        const frameName = 'upload_' + Date.now();
-        const iframe = document.createElement('iframe');
-        iframe.name = frameName;
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
 
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `${GAS_URL}?action=uploadImage&key=${encodeURIComponent(API_KEY)}`;
-        form.target = frameName;
-        form.enctype = 'application/x-www-form-urlencoded';
-
-        // Add form fields
-        function addField(name, value) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = name;
-            input.value = value;
-            form.appendChild(input);
-        }
-
-        addField('checkInId', checkInId);
-        addField('imageBase64', imageBase64);
-        addField('locationName', locationName);
-
-        document.body.appendChild(form);
-
-        let resolved = false;
-
-        iframe.onload = () => {
-            if (resolved) return;
-            resolved = true;
-            // Give GAS time to process
-            setTimeout(() => {
-                try { document.body.removeChild(iframe); } catch (e) { }
-                try { document.body.removeChild(form); } catch (e) { }
-                resolve({ success: true });
-            }, 1000);
-        };
-
-        // Timeout
-        setTimeout(() => {
-            if (resolved) return;
-            resolved = true;
-            try { document.body.removeChild(iframe); } catch (e) { }
-            try { document.body.removeChild(form); } catch (e) { }
-            resolve({ success: true }); // Assume success
-        }, 30000);
-
-        form.submit();
-    });
-}
 
 // ============ NAVIGATION ============
 function navigateTo(page, pushHash = true) {
@@ -154,8 +99,10 @@ function handlePhotoSelect(e) {
     reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
-            appState.photoCompressed = compressToDataURL(img, 800, 0.5);
+            // Display quality
             appState.photoDataURL = compressToDataURL(img, 1600, 0.85);
+            // Micro thumbnail for storage (~10KB, stored in Sheets)
+            appState.photoThumbnail = compressToDataURL(img, 200, 0.3);
             document.getElementById('photoPreview').src = appState.photoDataURL;
             document.getElementById('photoPreview').style.display = 'block';
             document.getElementById('photoPlaceholder').style.display = 'none';
@@ -381,16 +328,15 @@ function incrementShareCount() {
     document.getElementById('statShares').textContent = appState.shareCount;
 }
 
-// ============ SAVE TO MAP (TWO-STEP) ============
+// ============ SAVE TO MAP (single GET call with thumbnail) ============
 async function saveToMap() {
     if (appState.latitude === null) { showToast('⚠️ ไม่มีพิกัด GPS'); return; }
     const locationName = document.getElementById('textLine2').value.trim();
     if (!locationName) { showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่'); return; }
 
-    showLoading('กำลังบันทึกข้อมูล...');
+    showLoading('กำลังบันทึก...');
 
     try {
-        // === STEP 1: Save check-in text data via GET (proven working) ===
         const data = {
             locationName: locationName,
             latitude: appState.latitude,
@@ -398,34 +344,26 @@ async function saveToMap() {
             description: document.getElementById('textDescription').value.trim(),
         };
 
-        const result = await callGAS('saveCheckIn', data, true);
+        // Include micro thumbnail if photo exists
+        if (appState.photoThumbnail) {
+            data.thumbnail = appState.photoThumbnail;
+        }
+
+        // Single GET call — saveWithImage stores thumbnail in Sheets
+        const action = appState.photoThumbnail ? 'saveWithImage' : 'saveCheckIn';
+        const result = await callGAS(action, data, true);
 
         if (!result.success) {
             throw new Error(result.error || 'Save failed');
         }
 
-        const checkInId = result.data.id;
-        console.log('[KoShare] Check-in saved:', checkInId);
-
-        // === STEP 2: Upload image via form POST (if photo exists) ===
-        if (appState.photoCompressed) {
-            showLoading('กำลังอัปโหลดภาพ...');
-            try {
-                await postImageToGAS(checkInId, appState.photoCompressed, locationName);
-                console.log('[KoShare] Image upload submitted');
-            } catch (imgErr) {
-                console.warn('[KoShare] Image upload may have failed:', imgErr);
-                // Continue — check-in is saved even without image
-            }
-        }
-
         hideLoading();
         showToast('📌 บันทึกสำเร็จ!');
 
-        // Reload data after a delay (give GAS time to process image)
+        // Reload check-ins
         setTimeout(async () => {
             try { await loadCheckIns(); } catch (e) { }
-        }, appState.photoCompressed ? 5000 : 1000);
+        }, 1500);
 
     } catch (err) {
         hideLoading();
@@ -463,7 +401,7 @@ function renderHomeGallery(list) {
     const c = document.getElementById('homeGallery');
     if (!list || !list.length) { c.innerHTML = '<div class="empty-state"><span>🏞️</span><p>ยังไม่มีข้อมูล — เริ่มถ่ายภาพเลย!</p></div>'; return; }
     c.innerHTML = list.slice(0, 5).map(i => {
-        const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || ''), t = i.thumbnailUrl || '';
+        const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || ''), t = i.thumbnail || '';
         return `<div class="gallery-card-inline" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')">
             ${t ? `<img class="inline-thumb" src="${t}" onerror="this.outerHTML='<div class=\\'inline-icon\\'>📍</div>'">` : '<div class="inline-icon">📍</div>'}
             <div class="inline-info"><div class="inline-name">${n}</div><div class="inline-date">${formatDate(i.timestamp)}</div>
@@ -502,7 +440,7 @@ function renderGalleryPage() {
 
     c.innerHTML = pageItems.map(i => {
         const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || '');
-        const t = i.thumbnailUrl || '', f = i.imageUrl || '', d = escapeHtml(i.description || '');
+        const t = i.thumbnail || '', d = escapeHtml(i.description || '');
         const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
         return `<div class="gallery-card" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')">
             ${t ? `<img class="gallery-card-image" src="${t}" loading="lazy" onerror="this.outerHTML='<div class=gallery-card-image style=display:flex;align-items:center;justify-content:center;font-size:32px>📍</div>'">`
@@ -511,7 +449,6 @@ function renderGalleryPage() {
                 <div class="gallery-card-name">${n}</div>
                 <div class="gallery-card-date">${formatDate(i.timestamp)}</div>
                 ${d ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${d}</div>` : ''}
-                ${f ? `<a href="${f}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;" onclick="event.stopPropagation()">🖼️ ดูภาพเต็ม</a>` : ''}
                 <a href="${mapsUrl}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;display:block;margin-top:2px;" onclick="event.stopPropagation()">🗺️ นำทาง</a>
             </div></div>`;
     }).join('');
@@ -592,7 +529,7 @@ function addCheckInMarkers() {
         const lat = Number(i.latitude), lng = Number(i.longitude);
         if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
         const url = `https://www.google.com/maps?q=${lat},${lng}`;
-        const t = i.thumbnailUrl || '';
+        const t = i.thumbnail || '';
         const m = L.marker([lat, lng]).addTo(appState.mainMap);
         m.bindPopup(`<div class="popup-title">📍 ${escapeHtml(i.locationName)}</div>
             <div class="popup-date">${formatDate(i.timestamp)}</div>
