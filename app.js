@@ -22,6 +22,10 @@ const appState = {
     generatedImageDataURL: null,
     checkIns: [],
     shareCount: parseInt(localStorage.getItem('koShareCount') || '0'),
+    // Gallery pagination
+    galleryPage: 1,
+    galleryItemsPerPage: 10,
+    galleryFiltered: [],
 };
 
 // ============ INIT ============
@@ -468,17 +472,93 @@ function renderHomeGallery(list) {
 }
 
 function renderGalleryGrid(list) {
+    appState.galleryFiltered = list || [];
+    appState.galleryPage = 1;
+    renderGalleryPage();
+}
+
+function renderGalleryPage() {
+    const list = appState.galleryFiltered;
     const c = document.getElementById('galleryGrid');
-    if (!list || !list.length) { c.innerHTML = '<div class="empty-state"><span>🏞️</span><p>ยังไม่มีข้อมูล</p></div>'; return; }
-    c.innerHTML = list.map(i => {
+    const countEl = document.getElementById('galleryCount');
+    const paginationEl = document.getElementById('galleryPagination');
+
+    // Count display
+    countEl.textContent = `ทั้งหมด ${list.length} แห่ง`;
+
+    if (!list || !list.length) {
+        c.innerHTML = '<div class="empty-state"><span>🏞️</span><p>ยังไม่มีข้อมูล</p></div>';
+        paginationEl.style.display = 'none';
+        return;
+    }
+
+    // Pagination calc
+    const perPage = appState.galleryItemsPerPage;
+    const totalPages = Math.ceil(list.length / perPage);
+    const page = Math.min(appState.galleryPage, totalPages);
+    appState.galleryPage = page;
+    const start = (page - 1) * perPage;
+    const pageItems = list.slice(start, start + perPage);
+
+    c.innerHTML = pageItems.map(i => {
         const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || '');
         const t = i.thumbnailUrl || '', f = i.imageUrl || '', d = escapeHtml(i.description || '');
+        const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
         return `<div class="gallery-card" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')">
-            ${t ? `<img class="gallery-card-image" src="${t}" loading="lazy" onerror="this.style.display='none'">` : `<div class="gallery-card-image" style="display:flex;align-items:center;justify-content:center;font-size:32px;">📍</div>`}
-            <div class="gallery-card-info"><div class="gallery-card-name">${n}</div><div class="gallery-card-date">${formatDate(i.timestamp)}</div>
-            ${d ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${d}</div>` : ''}
-            ${f ? `<a href="${f}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;" onclick="event.stopPropagation()">🖼️ ดูภาพเต็ม</a>` : ''}</div></div>`;
+            ${t ? `<img class="gallery-card-image" src="${t}" loading="lazy" onerror="this.outerHTML='<div class=gallery-card-image style=display:flex;align-items:center;justify-content:center;font-size:32px>📍</div>'">`
+                : `<div class="gallery-card-image" style="display:flex;align-items:center;justify-content:center;font-size:32px;flex-direction:column;gap:4px;"><span>📍</span><span style='font-size:10px;color:var(--text-muted)'>${lat.toFixed(3)}, ${lng.toFixed(3)}</span></div>`}
+            <div class="gallery-card-info">
+                <div class="gallery-card-name">${n}</div>
+                <div class="gallery-card-date">${formatDate(i.timestamp)}</div>
+                ${d ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${d}</div>` : ''}
+                ${f ? `<a href="${f}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;" onclick="event.stopPropagation()">🖼️ ดูภาพเต็ม</a>` : ''}
+                <a href="${mapsUrl}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;display:block;margin-top:2px;" onclick="event.stopPropagation()">🗺️ นำทาง</a>
+            </div></div>`;
     }).join('');
+
+    // Pagination controls
+    if (totalPages > 1) {
+        paginationEl.style.display = 'flex';
+        document.getElementById('pageInfo').textContent = `${page} / ${totalPages}`;
+        document.getElementById('btnPrevPage').disabled = (page <= 1);
+        document.getElementById('btnNextPage').disabled = (page >= totalPages);
+    } else {
+        paginationEl.style.display = 'none';
+    }
+}
+
+function filterGallery() {
+    const query = (document.getElementById('gallerySearch').value || '').trim().toLowerCase();
+    const clearBtn = document.getElementById('searchClear');
+    clearBtn.style.display = query ? 'flex' : 'none';
+
+    if (!query) {
+        appState.galleryFiltered = appState.checkIns || [];
+    } else {
+        appState.galleryFiltered = (appState.checkIns || []).filter(item => {
+            const name = (item.locationName || '').toLowerCase();
+            const desc = (item.description || '').toLowerCase();
+            return name.includes(query) || desc.includes(query);
+        });
+    }
+    appState.galleryPage = 1;
+    renderGalleryPage();
+}
+
+function clearSearch() {
+    document.getElementById('gallerySearch').value = '';
+    document.getElementById('searchClear').style.display = 'none';
+    appState.galleryFiltered = appState.checkIns || [];
+    appState.galleryPage = 1;
+    renderGalleryPage();
+}
+
+function changePage(delta) {
+    const totalPages = Math.ceil(appState.galleryFiltered.length / appState.galleryItemsPerPage);
+    appState.galleryPage = Math.max(1, Math.min(totalPages, appState.galleryPage + delta));
+    renderGalleryPage();
+    // Scroll to top of gallery
+    document.getElementById('galleryGrid').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function showOnMap(lat, lng, name) {
