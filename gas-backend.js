@@ -17,20 +17,20 @@ function getSpreadsheet() {
 
 function ensureSheets() {
   const ss = getSpreadsheet();
-  
+
   let checkInsSheet = ss.getSheetByName('CheckIns');
   if (!checkInsSheet) {
     checkInsSheet = ss.insertSheet('CheckIns');
     checkInsSheet.appendRow(['id', 'locationName', 'latitude', 'longitude', 'timestamp', 'description']);
   }
-  
+
   let statsSheet = ss.getSheetByName('Stats');
   if (!statsSheet) {
     statsSheet = ss.insertSheet('Stats');
     statsSheet.appendRow(['key', 'value']);
     statsSheet.appendRow(['visitCount', 0]);
   }
-  
+
   return { checkInsSheet, statsSheet };
 }
 
@@ -45,9 +45,9 @@ function doPost(e) {
 function handleRequest(e) {
   const params = e.parameter || {};
   const action = params.action || '';
-  
+
   let result;
-  
+
   try {
     switch (action) {
       case 'getStats':
@@ -57,19 +57,33 @@ function handleRequest(e) {
         result = incrementVisitCount();
         break;
       case 'saveCheckIn':
-        const postData = JSON.parse(e.postData.contents);
-        result = saveCheckIn(postData);
+        // Support both GET (with data param) and POST
+        let checkInData;
+        if (params.data) {
+          checkInData = JSON.parse(params.data);
+        } else if (e.postData && e.postData.contents) {
+          checkInData = JSON.parse(e.postData.contents);
+        } else {
+          // Fallback: read individual params
+          checkInData = {
+            locationName: params.locationName || '',
+            latitude: parseFloat(params.latitude) || 0,
+            longitude: parseFloat(params.longitude) || 0,
+            description: params.description || ''
+          };
+        }
+        result = saveCheckIn(checkInData);
         break;
       case 'getCheckIns':
         result = getCheckIns();
         break;
       default:
-        result = { success: false, error: 'Unknown action' };
+        result = { success: false, error: 'Unknown action: ' + action };
     }
   } catch (err) {
     result = { success: false, error: err.toString() };
   }
-  
+
   return ContentService
     .createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
@@ -77,7 +91,7 @@ function handleRequest(e) {
 
 function getStats() {
   const { checkInsSheet, statsSheet } = ensureSheets();
-  
+
   const statsData = statsSheet.getDataRange().getValues();
   let visitCount = 0;
   for (let i = 1; i < statsData.length; i++) {
@@ -85,9 +99,9 @@ function getStats() {
       visitCount = parseInt(statsData[i][1]) || 0;
     }
   }
-  
+
   const totalLocations = Math.max(0, checkInsSheet.getLastRow() - 1);
-  
+
   return {
     success: true,
     data: {
@@ -99,7 +113,7 @@ function getStats() {
 
 function incrementVisitCount() {
   const { statsSheet } = ensureSheets();
-  
+
   const statsData = statsSheet.getDataRange().getValues();
   for (let i = 1; i < statsData.length; i++) {
     if (statsData[i][0] === 'visitCount') {
@@ -108,17 +122,17 @@ function incrementVisitCount() {
       return { success: true, data: { visitCount: current + 1 } };
     }
   }
-  
+
   statsSheet.appendRow(['visitCount', 1]);
   return { success: true, data: { visitCount: 1 } };
 }
 
 function saveCheckIn(data) {
   const { checkInsSheet } = ensureSheets();
-  
+
   const id = Utilities.getUuid();
   const timestamp = new Date().toISOString();
-  
+
   checkInsSheet.appendRow([
     id,
     data.locationName || '',
@@ -127,7 +141,7 @@ function saveCheckIn(data) {
     timestamp,
     data.description || ''
   ]);
-  
+
   return {
     success: true,
     data: {
@@ -143,11 +157,11 @@ function saveCheckIn(data) {
 
 function getCheckIns() {
   const { checkInsSheet } = ensureSheets();
-  
+
   const data = checkInsSheet.getDataRange().getValues();
   const headers = data[0];
   const checkIns = [];
-  
+
   for (let i = 1; i < data.length; i++) {
     const row = {};
     for (let j = 0; j < headers.length; j++) {
@@ -155,7 +169,7 @@ function getCheckIns() {
     }
     checkIns.push(row);
   }
-  
+
   return {
     success: true,
     data: checkIns.reverse()
