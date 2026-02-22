@@ -1,15 +1,18 @@
 /* ============================================
-   Ko Share — Application Logic (v1.1 — Bug Fixes)
+   Ko Share — Application Logic (v2.0)
+   Google Drive image upload + Security
    ============================================ */
 
 // ============ CONFIG ============
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbw3E6JPNmLfMs1lxQGt909ncdR6KWYi7hCtMVmdLfYbexVq_8wzW9lRlSyGWhuOto-Gqw/exec';
+const API_KEY = 'KOSHARE_2024_sKr_GoSuM';
 
 // ============ STATE ============
 const appState = {
     currentPage: 'home',
     photo: null,
     photoDataURL: null,
+    photoCompressed: null, // compressed base64 for upload
     latitude: null,
     longitude: null,
     miniMap: null,
@@ -27,7 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initApp() {
-    // Set up camera/gallery inputs
     const cameraInput = document.getElementById('cameraInput');
     const galleryInput = document.getElementById('galleryInput');
     const photoArea = document.getElementById('photoArea');
@@ -36,150 +38,74 @@ async function initApp() {
     galleryInput.addEventListener('change', handlePhotoSelect);
     photoArea.addEventListener('click', () => cameraInput.click());
 
-    // Live preview for text inputs
     document.getElementById('textLine2').addEventListener('input', updateComposerPreview);
-
-    // Update share count display
     document.getElementById('statShares').textContent = appState.shareCount;
 
-    // Load data from backend
-    try {
-        await incrementVisitCount();
-    } catch (e) {
-        console.warn('Visit count failed:', e);
-    }
-    try {
-        await loadCheckIns();
-    } catch (e) {
-        console.warn('Load check-ins failed:', e);
-    }
+    // Load data
+    try { await incrementVisitCount(); } catch (e) { console.warn('Visit:', e); }
+    try { await loadCheckIns(); } catch (e) { console.warn('CheckIns:', e); }
 
-    // Handle hash navigation
     window.addEventListener('hashchange', () => {
         const page = location.hash.replace('#', '') || 'home';
         navigateTo(page, false);
     });
 
-    // Check initial hash
     const initialPage = location.hash.replace('#', '') || 'home';
-    if (initialPage !== 'home') {
-        navigateTo(initialPage, false);
-    }
+    if (initialPage !== 'home') navigateTo(initialPage, false);
 }
 
 // ============ GAS API HELPER ============
-// GAS web apps redirect (302) which can cause CORS issues.
-// This helper uses fetch with proper redirect handling and JSONP fallback.
-async function callGAS(action, data = null) {
+async function callGAS(action, data = null, requireKey = false) {
     let url = `${GAS_URL}?action=${encodeURIComponent(action)}`;
+    if (requireKey) {
+        url += `&key=${encodeURIComponent(API_KEY)}`;
+    }
 
-    // For saveCheckIn, send data as URL parameter (avoids POST redirect issues)
-    if (data) {
+    let options = { method: 'GET', redirect: 'follow' };
+
+    // For large payloads (with image), use POST
+    if (data && data.imageBase64) {
+        options.method = 'POST';
+        options.body = JSON.stringify(data);
+        options.headers = { 'Content-Type': 'text/plain' };
+        if (requireKey) {
+            url = `${GAS_URL}?action=${encodeURIComponent(action)}&key=${encodeURIComponent(API_KEY)}`;
+        }
+    } else if (data) {
         url += `&data=${encodeURIComponent(JSON.stringify(data))}`;
     }
 
-    console.log(`[KoShare] API call: ${action}`, data || '');
+    console.log(`[KoShare] API: ${action}`, data ? '(with data)' : '');
 
-    // Try fetch first
     try {
-        const response = await fetch(url, {
-            method: 'GET',
-            redirect: 'follow',
-        });
-
+        const response = await fetch(url, options);
         const text = await response.text();
-        console.log(`[KoShare] API response for ${action}:`, text.substring(0, 200));
+        console.log(`[KoShare] Response ${action}:`, text.substring(0, 300));
 
-        // GAS sometimes returns HTML instead of JSON when there's an error
         if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-            throw new Error('GAS returned HTML instead of JSON — check deployment');
+            throw new Error('GAS returned HTML — check deployment');
         }
 
         return JSON.parse(text);
-    } catch (fetchError) {
-        console.warn(`[KoShare] Fetch failed for ${action}, trying JSONP:`, fetchError);
-
-        // Fallback: JSONP approach
-        return new Promise((resolve, reject) => {
-            const callbackName = 'koShareCallback_' + Date.now();
-            const script = document.createElement('script');
-
-            // Set timeout
-            const timeout = setTimeout(() => {
-                cleanup();
-                reject(new Error('JSONP timeout'));
-            }, 15000);
-
-            function cleanup() {
-                clearTimeout(timeout);
-                delete window[callbackName];
-                if (script.parentNode) script.parentNode.removeChild(script);
-            }
-
-            window[callbackName] = (result) => {
-                cleanup();
-                resolve(result);
-            };
-
-            // Use a different approach - create an iframe to handle the redirect
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-
-            iframe.onload = () => {
-                try {
-                    // Try to read the response - this may fail due to CORS
-                    const content = iframe.contentDocument.body.textContent;
-                    const result = JSON.parse(content);
-                    document.body.removeChild(iframe);
-                    cleanup();
-                    resolve(result);
-                } catch (e) {
-                    document.body.removeChild(iframe);
-                    cleanup();
-                    reject(new Error('Cannot read API response'));
-                }
-            };
-
-            iframe.onerror = () => {
-                document.body.removeChild(iframe);
-                cleanup();
-                reject(new Error('API request failed'));
-            };
-
-            iframe.src = url;
-        });
+    } catch (err) {
+        console.error(`[KoShare] API error (${action}):`, err);
+        throw err;
     }
 }
 
 // ============ NAVIGATION ============
 function navigateTo(page, pushHash = true) {
-    // Hide all pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-
-    // Show target page
     const targetPage = document.getElementById('page' + capitalize(page));
-    if (targetPage) {
-        targetPage.classList.add('active');
-    }
+    if (targetPage) targetPage.classList.add('active');
 
-    // Update nav
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.toggle('active', item.dataset.page === page);
     });
 
     appState.currentPage = page;
-
-    if (pushHash) {
-        location.hash = page;
-    }
-
-    // Initialize map if needed
-    if (page === 'map') {
-        setTimeout(() => initMainMap(), 200);
-    }
-
-    // Scroll to top
+    if (pushHash) location.hash = page;
+    if (page === 'map') setTimeout(() => initMainMap(), 200);
     window.scrollTo(0, 0);
 }
 
@@ -191,49 +117,52 @@ function capitalize(str) {
 function handlePhotoSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-
     appState.photo = file;
 
-    // Compress image for better performance
     const reader = new FileReader();
     reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
-            // Resize if too large (max 1600px on longest side)
-            const maxSize = 1600;
-            let width = img.width;
-            let height = img.height;
+            // Compress for upload (max 800px, quality 0.6 → ~100-200KB)
+            const uploadCanvas = compressImage(img, 800, 0.6);
+            appState.photoCompressed = uploadCanvas.toDataURL('image/jpeg', 0.6);
 
-            if (width > maxSize || height > maxSize) {
-                if (width > height) {
-                    height = Math.round(height * (maxSize / width));
-                    width = maxSize;
-                } else {
-                    width = Math.round(width * (maxSize / height));
-                    height = maxSize;
-                }
-            }
+            // Higher quality for display/compose (max 1600px)
+            const displayCanvas = compressImage(img, 1600, 0.85);
+            appState.photoDataURL = displayCanvas.toDataURL('image/jpeg', 0.85);
 
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            appState.photoDataURL = canvas.toDataURL('image/jpeg', 0.85);
-
-            // Show preview
             const preview = document.getElementById('photoPreview');
             const placeholder = document.getElementById('photoPlaceholder');
             preview.src = appState.photoDataURL;
             preview.style.display = 'block';
             placeholder.style.display = 'none';
-
             showToast('📷 ถ่ายภาพสำเร็จ!');
         };
         img.src = event.target.result;
     };
     reader.readAsDataURL(file);
+}
+
+function compressImage(img, maxSize, quality) {
+    let width = img.width;
+    let height = img.height;
+
+    if (width > maxSize || height > maxSize) {
+        if (width > height) {
+            height = Math.round(height * (maxSize / width));
+            width = maxSize;
+        } else {
+            width = Math.round(width * (maxSize / height));
+            height = maxSize;
+        }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas;
 }
 
 // ============ GPS ============
@@ -260,7 +189,6 @@ function getGPSLocation() {
             appState.latitude = position.coords.latitude;
             appState.longitude = position.coords.longitude;
 
-            // Update UI
             statusEl.innerHTML = `
                 <div class="gps-found">
                     <span class="gps-found-icon">✅</span>
@@ -275,9 +203,7 @@ function getGPSLocation() {
             btnGPS.disabled = false;
             btnGPS.textContent = '🔄 ปักหมุดใหม่';
 
-            // Show mini map
             initMiniMap(appState.latitude, appState.longitude);
-
             showToast('📍 ปักหมุดสำเร็จ!');
         },
         (error) => {
@@ -297,32 +223,21 @@ function getGPSLocation() {
             btnGPS.textContent = '📍 ลองใหม่';
             showToast('⚠️ ' + msg);
         },
-        {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0
-        }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
 }
 
 function initMiniMap(lat, lng) {
     const container = document.getElementById('miniMap');
-
-    if (appState.miniMap) {
-        appState.miniMap.remove();
-    }
+    if (appState.miniMap) appState.miniMap.remove();
 
     appState.miniMap = L.map(container, {
-        zoomControl: false,
-        attributionControl: false,
-        dragging: false,
-        scrollWheelZoom: false,
+        zoomControl: false, attributionControl: false,
+        dragging: false, scrollWheelZoom: false,
     }).setView([lat, lng], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(appState.miniMap);
-
     L.marker([lat, lng]).addTo(appState.miniMap);
-
     setTimeout(() => appState.miniMap.invalidateSize(), 200);
 }
 
@@ -333,35 +248,24 @@ function updateComposerPreview() {
 }
 
 async function generateImage() {
-    // Validation
-    if (!appState.photoDataURL) {
-        showToast('⚠️ กรุณาถ่ายภาพก่อน');
-        return;
-    }
-    if (appState.latitude === null || appState.longitude === null) {
-        showToast('⚠️ กรุณาปักหมุด GPS ก่อน');
-        return;
-    }
+    if (!appState.photoDataURL) { showToast('⚠️ กรุณาถ่ายภาพก่อน'); return; }
+    if (appState.latitude === null) { showToast('⚠️ กรุณาปักหมุด GPS ก่อน'); return; }
     const locationName = document.getElementById('textLine2').value.trim();
-    if (!locationName) {
-        showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่');
-        return;
-    }
+    if (!locationName) { showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่'); return; }
 
     showLoading('กำลังสร้างภาพ...');
 
     try {
-        // === APPROACH: Draw everything on Canvas directly (no html2canvas dependency for QR) ===
         const canvas = document.createElement('canvas');
         canvas.width = 1200;
         canvas.height = 630;
         const ctx = canvas.getContext('2d');
 
-        // 1. Draw photo background
+        // 1. Photo background
         const photo = await loadImage(appState.photoDataURL);
         drawImageCover(ctx, photo, 0, 0, 1200, 630);
 
-        // 2. Draw gradient overlay
+        // 2. Gradient overlays
         const gradTop = ctx.createLinearGradient(0, 0, 0, 250);
         gradTop.addColorStop(0, 'rgba(0,0,0,0.75)');
         gradTop.addColorStop(1, 'rgba(0,0,0,0)');
@@ -374,7 +278,7 @@ async function generateImage() {
         ctx.fillStyle = gradBottom;
         ctx.fillRect(0, 380, 1200, 250);
 
-        // 3. Draw top text: "แนะนำแหล่งเรียนรู้"
+        // 3. Text overlays
         ctx.textAlign = 'center';
         ctx.shadowColor = 'rgba(0,0,0,0.6)';
         ctx.shadowBlur = 10;
@@ -384,21 +288,18 @@ async function generateImage() {
         ctx.fillStyle = '#ffffff';
         ctx.fillText(document.getElementById('textLine1').value, 600, 70);
 
-        // 4. Draw location name (line 2)
         ctx.font = '800 48px Prompt, sans-serif';
         ctx.fillStyle = '#fbbf24';
         ctx.fillText(locationName, 600, 130);
 
-        // 5. Generate QR code as canvas
+        // 4. QR Code
         const mapsUrl = `https://www.google.com/maps?q=${appState.latitude},${appState.longitude}`;
         const qrCanvas = await generateQRCanvas(mapsUrl, 130);
 
-        // Draw QR code with white background/padding
         const qrX = 600 - 75;
         const qrY = 400;
         const qrPadding = 10;
 
-        // White rounded rect behind QR
         ctx.shadowColor = 'rgba(0,0,0,0.4)';
         ctx.shadowBlur = 15;
         ctx.shadowOffsetY = 4;
@@ -406,15 +307,12 @@ async function generateImage() {
         roundRect(ctx, qrX - qrPadding, qrY - qrPadding, 150 + qrPadding * 2, 150 + qrPadding * 2, 12);
         ctx.fill();
 
-        // Reset shadow
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
-
-        // Draw QR
         ctx.drawImage(qrCanvas, qrX, qrY, 150, 150);
 
-        // 6. "สแกน QR ดูเส้นทาง" text
+        // 5. Bottom text
         ctx.shadowColor = 'rgba(0,0,0,0.6)';
         ctx.shadowBlur = 8;
         ctx.shadowOffsetY = 2;
@@ -422,36 +320,27 @@ async function generateImage() {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillText('สแกน QR ดูเส้นทาง', 600, 575);
 
-        // 7. Draw bottom text: "สกร.ระดับอำเภอโกสุมพิสัย"
         ctx.font = '600 26px Prompt, sans-serif';
         ctx.fillStyle = '#ffffff';
         ctx.fillText(document.getElementById('textLine3').value, 600, 605);
 
-        // 8. Brand
         ctx.font = '500 14px Prompt, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
         ctx.fillText('📍 Ko Share', 600, 625);
 
-        // Reset shadow
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
 
-        // Convert canvas to image
+        // Convert
         appState.generatedImageDataURL = canvas.toDataURL('image/png');
+        canvas.toBlob((blob) => { appState.generatedImageBlob = blob; }, 'image/png');
 
-        canvas.toBlob((blob) => {
-            appState.generatedImageBlob = blob;
-        }, 'image/png');
-
-        // Show preview
-        const generatedImage = document.getElementById('generatedImage');
-        generatedImage.src = appState.generatedImageDataURL;
+        document.getElementById('generatedImage').src = appState.generatedImageDataURL;
         document.getElementById('previewArea').style.display = 'block';
 
         hideLoading();
         showToast('✅ สร้างภาพสำเร็จ!');
 
-        // Scroll to preview
         setTimeout(() => {
             document.getElementById('previewArea').scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
@@ -463,7 +352,6 @@ async function generateImage() {
     }
 }
 
-// Helper: Load image as promise
 function loadImage(src) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -474,48 +362,30 @@ function loadImage(src) {
     });
 }
 
-// Helper: Draw image with "cover" behavior
 function drawImageCover(ctx, img, x, y, w, h) {
     const imgRatio = img.width / img.height;
     const boxRatio = w / h;
     let sw, sh, sx, sy;
-
     if (imgRatio > boxRatio) {
-        sh = img.height;
-        sw = sh * boxRatio;
-        sx = (img.width - sw) / 2;
-        sy = 0;
+        sh = img.height; sw = sh * boxRatio; sx = (img.width - sw) / 2; sy = 0;
     } else {
-        sw = img.width;
-        sh = sw / boxRatio;
-        sx = 0;
-        sy = (img.height - sh) / 2;
+        sw = img.width; sh = sw / boxRatio; sx = 0; sy = (img.height - sh) / 2;
     }
-
     ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
-// Helper: Generate QR Code directly on canvas (no DOM dependency)
 function generateQRCanvas(text, size) {
     return new Promise((resolve) => {
-        // Create a temporary container for QRCode library
         const tempDiv = document.createElement('div');
-        tempDiv.style.position = 'fixed';
-        tempDiv.style.left = '-9999px';
-        tempDiv.style.top = '-9999px';
+        tempDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
         document.body.appendChild(tempDiv);
 
         new QRCode(tempDiv, {
-            text: text,
-            width: size,
-            height: size,
-            colorDark: '#000000',
-            colorLight: '#ffffff',
+            text, width: size, height: size,
+            colorDark: '#000000', colorLight: '#ffffff',
             correctLevel: QRCode.CorrectLevel.H,
         });
 
-        // QRCode library creates a canvas element inside the div
-        // Wait for it to render
         const checkQR = setInterval(() => {
             const qrCanvas = tempDiv.querySelector('canvas');
             const qrImg = tempDiv.querySelector('img');
@@ -524,20 +394,16 @@ function generateQRCanvas(text, size) {
                 clearInterval(checkQR);
                 document.body.removeChild(tempDiv);
                 resolve(qrCanvas);
-            } else if (qrImg && qrImg.complete && qrImg.src) {
+            } else if (qrImg && qrImg.complete && qrImg.src && qrImg.naturalWidth > 0) {
                 clearInterval(checkQR);
-                // Convert img to canvas
                 const c = document.createElement('canvas');
-                c.width = size;
-                c.height = size;
-                const cctx = c.getContext('2d');
-                cctx.drawImage(qrImg, 0, 0, size, size);
+                c.width = size; c.height = size;
+                c.getContext('2d').drawImage(qrImg, 0, 0, size, size);
                 document.body.removeChild(tempDiv);
                 resolve(c);
             }
         }, 50);
 
-        // Timeout safety
         setTimeout(() => {
             clearInterval(checkQR);
             const qrCanvas = tempDiv.querySelector('canvas');
@@ -545,10 +411,8 @@ function generateQRCanvas(text, size) {
                 document.body.removeChild(tempDiv);
                 resolve(qrCanvas);
             } else {
-                // Last resort: create a simple placeholder
                 const c = document.createElement('canvas');
-                c.width = size;
-                c.height = size;
+                c.width = size; c.height = size;
                 const cctx = c.getContext('2d');
                 cctx.fillStyle = '#ffffff';
                 cctx.fillRect(0, 0, size, size);
@@ -563,7 +427,6 @@ function generateQRCanvas(text, size) {
     });
 }
 
-// Helper: Rounded rectangle
 function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -580,11 +443,7 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // ============ DOWNLOAD & SHARE ============
 function downloadImage() {
-    if (!appState.generatedImageDataURL) {
-        showToast('⚠️ กรุณาสร้างภาพก่อน');
-        return;
-    }
-
+    if (!appState.generatedImageDataURL) { showToast('⚠️ กรุณาสร้างภาพก่อน'); return; }
     const locationName = document.getElementById('textLine2').value.trim() || 'location';
     const link = document.createElement('a');
     link.href = appState.generatedImageDataURL;
@@ -592,33 +451,23 @@ function downloadImage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
     incrementShareCount();
     showToast('💾 บันทึกภาพสำเร็จ!');
 }
 
 async function shareImage() {
-    if (!appState.generatedImageBlob) {
-        showToast('⚠️ กรุณาสร้างภาพก่อน');
-        return;
-    }
-
+    if (!appState.generatedImageBlob) { showToast('⚠️ กรุณาสร้างภาพก่อน'); return; }
     const locationName = document.getElementById('textLine2').value.trim() || 'แหล่งเรียนรู้';
 
     if (navigator.share && navigator.canShare) {
         try {
-            const file = new File(
-                [appState.generatedImageBlob],
-                `KoShare_${locationName.replace(/\s+/g, '_')}.png`,
-                { type: 'image/png' }
-            );
-
+            const file = new File([appState.generatedImageBlob],
+                `KoShare_${locationName.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
             const shareData = {
                 title: `Ko Share — ${locationName}`,
                 text: `📍 แนะนำแหล่งเรียนรู้: ${locationName}\nสกร.ระดับอำเภอโกสุมพิสัย\n\nสแกน QR Code ในภาพเพื่อดูเส้นทาง!`,
                 files: [file],
             };
-
             if (navigator.canShare(shareData)) {
                 await navigator.share(shareData);
                 incrementShareCount();
@@ -627,43 +476,28 @@ async function shareImage() {
             }
         } catch (err) {
             if (err.name === 'AbortError') return;
-            console.warn('Share API failed:', err);
         }
     }
-
-    // Fallback: download the image
     downloadImage();
 }
 
 function shareToFacebook() {
-    if (!appState.generatedImageDataURL) {
-        showToast('⚠️ กรุณาสร้างภาพก่อน');
-        return;
-    }
-
+    if (!appState.generatedImageDataURL) { showToast('⚠️ กรุณาสร้างภาพก่อน'); return; }
     const mapsUrl = `https://www.google.com/maps?q=${appState.latitude},${appState.longitude}`;
     const locationName = document.getElementById('textLine2').value.trim() || 'แหล่งเรียนรู้';
-    const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(mapsUrl)}&quote=${encodeURIComponent(`📍 แนะนำแหล่งเรียนรู้: ${locationName}\nสกร.ระดับอำเภอโกสุมพิสัย`)}`;
-
-    window.open(fbUrl, '_blank');
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(mapsUrl)}&quote=${encodeURIComponent(`📍 ${locationName} — สกร.ระดับอำเภอโกสุมพิสัย`)}`, '_blank');
     incrementShareCount();
-    showToast('📤 กำลังเปิด Facebook...\n💡 Tip: ใช้ปุ่ม "แชร์" เพื่อส่งภาพตรง');
+    showToast('📤 เปิด Facebook แล้ว');
 }
 
 function shareToLine() {
-    if (!appState.generatedImageDataURL) {
-        showToast('⚠️ กรุณาสร้างภาพก่อน');
-        return;
-    }
-
+    if (!appState.generatedImageDataURL) { showToast('⚠️ กรุณาสร้างภาพก่อน'); return; }
     const mapsUrl = `https://www.google.com/maps?q=${appState.latitude},${appState.longitude}`;
     const locationName = document.getElementById('textLine2').value.trim() || 'แหล่งเรียนรู้';
     const text = `📍 แนะนำแหล่งเรียนรู้: ${locationName}\nสกร.ระดับอำเภอโกสุมพิสัย\n🗺️ ดูเส้นทาง: ${mapsUrl}`;
-    const lineUrl = `https://line.me/R/share?text=${encodeURIComponent(text)}`;
-
-    window.open(lineUrl, '_blank');
+    window.open(`https://line.me/R/share?text=${encodeURIComponent(text)}`, '_blank');
     incrementShareCount();
-    showToast('📤 กำลังเปิด LINE...\n💡 Tip: ใช้ปุ่ม "แชร์" เพื่อส่งภาพตรง');
+    showToast('📤 เปิด LINE แล้ว');
 }
 
 function incrementShareCount() {
@@ -672,20 +506,13 @@ function incrementShareCount() {
     document.getElementById('statShares').textContent = appState.shareCount;
 }
 
-// ============ SAVE TO MAP ============
+// ============ SAVE TO MAP (with image upload) ============
 async function saveToMap() {
-    if (appState.latitude === null || appState.longitude === null) {
-        showToast('⚠️ ไม่มีพิกัด GPS');
-        return;
-    }
-
+    if (appState.latitude === null) { showToast('⚠️ ไม่มีพิกัด GPS'); return; }
     const locationName = document.getElementById('textLine2').value.trim();
-    if (!locationName) {
-        showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่');
-        return;
-    }
+    if (!locationName) { showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่'); return; }
 
-    showLoading('กำลังบันทึกลงแผนที่...');
+    showLoading('กำลังอัปโหลดภาพ & บันทึก...');
 
     try {
         const data = {
@@ -695,13 +522,17 @@ async function saveToMap() {
             description: document.getElementById('textDescription').value.trim(),
         };
 
-        // Use GET with data parameter (more reliable with GAS redirects)
-        const result = await callGAS('saveCheckIn', data);
+        // Include compressed photo for Drive upload
+        if (appState.photoCompressed) {
+            data.imageBase64 = appState.photoCompressed;
+        }
+
+        // Use saveCheckInWithImage action (POST for image data)
+        const result = await callGAS('saveCheckInWithImage', data, true);
 
         if (result.success) {
             hideLoading();
-            showToast('📌 บันทึกลงแผนที่สำเร็จ!');
-            // Reload check-ins
+            showToast('📌 บันทึกสำเร็จ! ภาพอัปโหลดไป Google Drive แล้ว');
             loadCheckIns();
         } else {
             throw new Error(result.error || 'Unknown error');
@@ -709,7 +540,28 @@ async function saveToMap() {
     } catch (err) {
         hideLoading();
         console.error('Save error:', err);
-        showToast('❌ บันทึกไม่สำเร็จ: ' + err.message);
+
+        // Fallback: save without image
+        try {
+            showLoading('บันทึกข้อมูลอย่างเดียว...');
+            const data = {
+                locationName: locationName,
+                latitude: appState.latitude,
+                longitude: appState.longitude,
+                description: document.getElementById('textDescription').value.trim(),
+            };
+            const result = await callGAS('saveCheckIn', data, true);
+            hideLoading();
+            if (result.success) {
+                showToast('📌 บันทึกข้อมูลสำเร็จ (ไม่ได้อัปโหลดภาพ)');
+                loadCheckIns();
+            } else {
+                showToast('❌ บันทึกไม่สำเร็จ');
+            }
+        } catch (e2) {
+            hideLoading();
+            showToast('❌ บันทึกไม่สำเร็จ: ' + err.message);
+        }
     }
 }
 
@@ -730,64 +582,50 @@ async function incrementVisitCount() {
 async function loadCheckIns() {
     try {
         const result = await callGAS('getCheckIns');
-
         if (result && result.success) {
             appState.checkIns = result.data || [];
             document.getElementById('statLocations').textContent = appState.checkIns.length;
             renderHomeGallery(appState.checkIns);
             renderGalleryGrid(appState.checkIns);
-
-            // Refresh map markers if map is already loaded
-            if (appState.mainMap) {
-                addCheckInMarkers();
-            }
+            if (appState.mainMap) addCheckInMarkers();
         }
     } catch (err) {
         console.warn('Load check-ins error:', err);
     }
 }
 
+// ============ RENDER GALLERY ============
 function renderHomeGallery(checkIns) {
     const container = document.getElementById('homeGallery');
-
     if (!checkIns || checkIns.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <span>🏞️</span>
-                <p>ยังไม่มีข้อมูล — เริ่มถ่ายภาพเลย!</p>
-            </div>
-        `;
+        container.innerHTML = `<div class="empty-state"><span>🏞️</span><p>ยังไม่มีข้อมูล — เริ่มถ่ายภาพเลย!</p></div>`;
         return;
     }
 
-    const recent = checkIns.slice(0, 5);
-    container.innerHTML = recent.map(item => {
+    container.innerHTML = checkIns.slice(0, 5).map(item => {
         const lat = Number(item.latitude);
         const lng = Number(item.longitude);
         const name = escapeHtml(item.locationName || '');
+        const thumb = item.thumbnailUrl || '';
         return `
         <div class="gallery-card-inline" onclick="showOnMap(${lat}, ${lng}, '${name.replace(/'/g, "\\'")}')">
-            <div class="inline-icon">📍</div>
+            ${thumb
+                ? `<img class="inline-thumb" src="${thumb}" onerror="this.outerHTML='<div class=\\'inline-icon\\'>📍</div>'">`
+                : `<div class="inline-icon">📍</div>`
+            }
             <div class="inline-info">
                 <div class="inline-name">${name}</div>
                 <div class="inline-date">${formatDate(item.timestamp)}</div>
                 <div class="inline-coords">${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
             </div>
-        </div>
-        `;
+        </div>`;
     }).join('');
 }
 
 function renderGalleryGrid(checkIns) {
     const container = document.getElementById('galleryGrid');
-
     if (!checkIns || checkIns.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <span>🏞️</span>
-                <p>ยังไม่มีข้อมูล</p>
-            </div>
-        `;
+        container.innerHTML = `<div class="empty-state"><span>🏞️</span><p>ยังไม่มีข้อมูล</p></div>`;
         return;
     }
 
@@ -796,20 +634,24 @@ function renderGalleryGrid(checkIns) {
         const lng = Number(item.longitude);
         const name = escapeHtml(item.locationName || '');
         const desc = escapeHtml(item.description || '');
-        const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const thumb = item.thumbnailUrl || '';
+        const fullImg = item.imageUrl || '';
         return `
         <div class="gallery-card" onclick="showOnMap(${lat}, ${lng}, '${name.replace(/'/g, "\\'")}')">
-            <div class="gallery-card-image" style="display: flex; align-items: center; justify-content: center; font-size: 32px; flex-direction: column; gap: 4px;">
-                <span>📍</span>
-                <span style="font-size: 11px; color: var(--text-muted);">${lat.toFixed(3)}, ${lng.toFixed(3)}</span>
-            </div>
+            ${thumb
+                ? `<img class="gallery-card-image" src="${thumb}" loading="lazy" onerror="this.style.display='none'">`
+                : `<div class="gallery-card-image" style="display:flex;align-items:center;justify-content:center;font-size:32px;flex-direction:column;gap:4px;">
+                    <span>📍</span>
+                    <span style="font-size:11px;color:var(--text-muted);">${lat.toFixed(3)}, ${lng.toFixed(3)}</span>
+                  </div>`
+            }
             <div class="gallery-card-info">
                 <div class="gallery-card-name">${name}</div>
                 <div class="gallery-card-date">${formatDate(item.timestamp)}</div>
                 ${desc ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${desc}</div>` : ''}
+                ${fullImg ? `<a href="${fullImg}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;" onclick="event.stopPropagation()">🖼️ ดูภาพเต็ม</a>` : ''}
             </div>
-        </div>
-        `;
+        </div>`;
     }).join('');
 }
 
@@ -818,8 +660,7 @@ function showOnMap(lat, lng, name) {
     setTimeout(() => {
         if (appState.mainMap) {
             appState.mainMap.setView([lat, lng], 16);
-            L.popup()
-                .setLatLng([lat, lng])
+            L.popup().setLatLng([lat, lng])
                 .setContent(`<div class="popup-title">${name}</div>`)
                 .openOn(appState.mainMap);
         }
@@ -829,53 +670,42 @@ function showOnMap(lat, lng, name) {
 // ============ MAP ============
 function initMainMap() {
     const container = document.getElementById('mainMap');
-
     if (appState.mainMap) {
         appState.mainMap.invalidateSize();
-        // Re-add markers in case data was loaded after map init
         addCheckInMarkers();
         return;
     }
 
-    // Default center: Kosumphisai, Maha Sarakham
-    const defaultLat = 16.2478;
-    const defaultLng = 103.0650;
-
-    appState.mainMap = L.map(container).setView([defaultLat, defaultLng], 12);
-
+    appState.mainMap = L.map(container).setView([16.2478, 103.0650], 12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19,
+        attribution: '© OpenStreetMap', maxZoom: 19,
     }).addTo(appState.mainMap);
 
-    // Add check-in markers
     addCheckInMarkers();
-
     setTimeout(() => appState.mainMap.invalidateSize(), 300);
 }
 
 function addCheckInMarkers() {
     if (!appState.mainMap) return;
 
-    // Remove existing markers
     appState.mainMapMarkers.forEach(m => appState.mainMap.removeLayer(m));
     appState.mainMapMarkers = [];
-
     if (!appState.checkIns || appState.checkIns.length === 0) return;
 
     const bounds = [];
-
     appState.checkIns.forEach(item => {
         const lat = Number(item.latitude);
         const lng = Number(item.longitude);
         if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
         const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const thumb = item.thumbnailUrl || '';
 
         const marker = L.marker([lat, lng]).addTo(appState.mainMap);
         marker.bindPopup(`
             <div class="popup-title">📍 ${escapeHtml(item.locationName)}</div>
             <div class="popup-date">${formatDate(item.timestamp)}</div>
+            ${thumb ? `<img src="${thumb}" style="width:100%;max-width:200px;border-radius:6px;margin:6px 0;" onerror="this.style.display='none'">` : ''}
             ${item.description ? `<div style="font-size:12px;margin-bottom:4px;">${escapeHtml(item.description)}</div>` : ''}
             <a class="popup-link" href="${mapsUrl}" target="_blank">🗺️ เปิดใน Google Maps</a>
         `);
@@ -894,11 +724,8 @@ function showToast(message) {
     const toast = document.getElementById('toast');
     toast.textContent = message;
     toast.classList.add('show');
-
     clearTimeout(toast._timeout);
-    toast._timeout = setTimeout(() => {
-        toast.classList.remove('show');
-    }, 3000);
+    toast._timeout = setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
 function showLoading(text = 'กำลังดำเนินการ...') {
@@ -923,13 +750,8 @@ function formatDate(dateStr) {
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return String(dateStr);
         return d.toLocaleDateString('th-TH', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
         });
-    } catch (e) {
-        return String(dateStr);
-    }
+    } catch (e) { return String(dateStr); }
 }
