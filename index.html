@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Ko Share — เครื่องมือแนะนำแหล่งเรียนรู้ สกร.อำเภอโกสุมพิสัย">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="Ko Share — แนะนำแหล่งเรียนรู้">
+    <meta property="og:description" content="ถ่ายภาพ ปักหมุด สร้าง QR Code แชร์แหล่งเรียนรู้ง่ายๆ">
+    <meta property="og:type" content="website">
+
+    <title>Ko Share 📍 — แนะนำแหล่งเรียนรู้</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- App CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ============ HEADER ============ -->
+    <header class="app-header">
+        <div class="header-brand">
+            <span class="header-pin">📍</span>
+            <h1 class="header-title">Ko Share</h1>
+        </div>
+        <div class="header-stats">
+            <div class="visit-badge" id="visitBadge">
+                <span class="visit-icon">👁️</span>
+                <span class="visit-count" id="visitCount">—</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ============ MAIN CONTENT ============ -->
+    <main class="app-main">
+        <!-- HOME PAGE -->
+        <section class="page active" id="pageHome">
+            <div class="home-hero">
+                <div class="hero-glow"></div>
+                <div class="hero-content">
+                    <div class="hero-icon">📍</div>
+                    <h2 class="hero-title">Ko Share</h2>
+                    <p class="hero-subtitle">แนะนำแหล่งเรียนรู้<br>สกร.ระดับอำเภอโกสุมพิสัย</p>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📸</div>
+                    <div class="stat-value" id="statLocations">0</div>
+                    <div class="stat-label">แหล่งเรียนรู้</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">👁️</div>
+                    <div class="stat-value" id="statVisits">0</div>
+                    <div class="stat-label">ผู้เข้าชม</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📤</div>
+                    <div class="stat-value" id="statShares">0</div>
+                    <div class="stat-label">แชร์แล้ว</div>
+                </div>
+            </div>
+
+            <div class="quick-actions">
+                <button class="action-btn primary-action" onclick="navigateTo('capture')">
+                    <span class="action-icon">📷</span>
+                    <span class="action-text">ถ่ายภาพ & ปักหมุด</span>
+                </button>
+            </div>
+
+            <!-- Recent Check-ins -->
+            <div class="section-header">
+                <h3>📌 สถานที่ล่าสุด</h3>
+            </div>
+            <div class="gallery" id="homeGallery">
+                <div class="empty-state">
+                    <span>🏞️</span>
+                    <p>ยังไม่มีข้อมูล — เริ่มถ่ายภาพเลย!</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- CAPTURE PAGE -->
+        <section class="page" id="pageCapture">
+            <div class="capture-container">
+                <!-- Step 1: Photo -->
+                <div class="capture-step" id="stepPhoto">
+                    <div class="step-header">
+                        <span class="step-number">1</span>
+                        <h3>📷 ถ่ายภาพสถานที่</h3>
+                    </div>
+                    <div class="photo-area" id="photoArea">
+                        <div class="photo-placeholder" id="photoPlaceholder">
+                            <span class="placeholder-icon">📷</span>
+                            <p>แตะเพื่อถ่ายภาพ</p>
+                        </div>
+                        <img id="photoPreview" class="photo-preview" style="display:none">
+                        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+                    </div>
+                    <div class="photo-actions">
+                        <button class="btn btn-outline" onclick="document.getElementById('cameraInput').click()">
+                            📷 ถ่ายภาพ
+                        </button>
+                        <button class="btn btn-outline" onclick="document.getElementById('galleryInput').click()">
+                            🖼️ เลือกจากแกลเลอรี
+                        </button>
+                        <input type="file" id="galleryInput" accept="image/*" style="display:none">
+                    </div>
+                </div>
+
+                <!-- Step 2: GPS -->
+                <div class="capture-step" id="stepGPS">
+                    <div class="step-header">
+                        <span class="step-number">2</span>
+                        <h3>📍 ปักหมุดตำแหน่ง</h3>
+                    </div>
+                    <div class="gps-status" id="gpsStatus">
+                        <div class="gps-waiting">
+                            <div class="gps-spinner"></div>
+                            <p>รอรับพิกัด GPS...</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="btnGetGPS" onclick="getGPSLocation()">
+                        📍 ปักหมุดตำแหน่ง GPS
+                    </button>
+                    <div class="gps-info" id="gpsInfo" style="display:none">
+                        <div class="gps-coords">
+                            <span class="coord-label">Lat:</span>
+                            <span class="coord-value" id="latValue">—</span>
+                            <span class="coord-label">Lng:</span>
+                            <span class="coord-value" id="lngValue">—</span>
+                        </div>
+                        <div id="miniMap" class="mini-map"></div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Text -->
+                <div class="capture-step" id="stepText">
+                    <div class="step-header">
+                        <span class="step-number">3</span>
+                        <h3>✏️ เพิ่มข้อความ</h3>
+                    </div>
+                    <div class="text-inputs">
+                        <div class="input-group">
+                            <label>บรรทัดที่ 1 (คงที่)</label>
+                            <input type="text" class="text-input" id="textLine1" value="แนะนำแหล่งเรียนรู้" readonly>
+                        </div>
+                        <div class="input-group">
+                            <label>บรรทัดที่ 2 (ชื่อสถานที่)</label>
+                            <input type="text" class="text-input" id="textLine2" placeholder="เช่น วัดสุวรรณาวาส, ตลาดโกสุมพิสัย...">
+                        </div>
+                        <div class="input-group">
+                            <label>รายละเอียดเพิ่มเติม (ไม่บังคับ)</label>
+                            <input type="text" class="text-input" id="textDescription" placeholder="รายละเอียดสั้นๆ...">
+                        </div>
+                        <div class="input-group">
+                            <label>บรรทัดล่าง (คงที่)</label>
+                            <input type="text" class="text-input" id="textLine3" value="สกร.ระดับอำเภอโกสุมพิสัย" readonly>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Preview & Action -->
+                <div class="capture-step" id="stepPreview">
+                    <div class="step-header">
+                        <span class="step-number">4</span>
+                        <h3>🖼️ ภาพพร้อมแชร์</h3>
+                    </div>
+                    <button class="btn btn-primary btn-generate" id="btnGenerate" onclick="generateImage()">
+                        ✨ สร้างภาพแชร์
+                    </button>
+                    
+                    <!-- Image Composer (hidden, used for rendering) -->
+                    <div class="composer-wrapper" id="composerWrapper" style="display:none">
+                        <div class="composer" id="imageComposer">
+                            <div class="composer-photo" id="composerPhoto"></div>
+                            <div class="composer-overlay">
+                                <div class="composer-top">
+                                    <div class="composer-line1" id="composerLine1">แนะนำแหล่งเรียนรู้</div>
+                                    <div class="composer-line2" id="composerLine2">ชื่อสถานที่</div>
+                                </div>
+                                <div class="composer-bottom">
+                                    <div class="composer-qr" id="composerQR"></div>
+                                    <div class="composer-scan-text">สแกน QR ดูเส้นทาง</div>
+                                    <div class="composer-line3" id="composerLine3">สกร.ระดับอำเภอโกสุมพิสัย</div>
+                                    <div class="composer-brand">📍 Ko Share</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generated Image Preview -->
+                    <div class="preview-area" id="previewArea" style="display:none">
+                        <img id="generatedImage" class="generated-image">
+                        <div class="share-actions">
+                            <button class="btn btn-success" onclick="downloadImage()">
+                                💾 บันทึกภาพ
+                            </button>
+                            <button class="btn btn-primary" onclick="shareImage()">
+                                📤 แชร์
+                            </button>
+                            <button class="btn btn-outline" onclick="shareToFacebook()">
+                                <svg class="share-icon" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                Facebook
+                            </button>
+                            <button class="btn btn-outline btn-line" onclick="shareToLine()">
+                                <svg class="share-icon" viewBox="0 0 24 24"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+                                LINE
+                            </button>
+                        </div>
+                        <button class="btn btn-outline btn-save-map" onclick="saveToMap()">
+                            📌 บันทึกลงแผนที่
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MAP PAGE -->
+        <section class="page" id="pageMap">
+            <div class="map-header">
+                <h3>🗺️ แผนที่แหล่งเรียนรู้</h3>
+                <p class="map-subtitle">สถานที่ทั้งหมดที่ถ่ายภาพไว้</p>
+            </div>
+            <div id="mainMap" class="main-map"></div>
+            <div class="map-legend">
+                <div class="legend-item">
+                    <span class="legend-pin">📍</span>
+                    <span>แหล่งเรียนรู้ที่บันทึกแล้ว</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- GALLERY PAGE -->
+        <section class="page" id="pageGallery">
+            <div class="gallery-header">
+                <h3>📸 แกลเลอรีแหล่งเรียนรู้</h3>
+            </div>
+            <div class="gallery-grid" id="galleryGrid">
+                <div class="empty-state">
+                    <span>🏞️</span>
+                    <p>ยังไม่มีข้อมูล</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ============ BOTTOM NAVIGATION ============ -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" data-page="home" onclick="navigateTo('home')">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-label">หน้าแรก</span>
+        </button>
+        <button class="nav-item" data-page="capture" onclick="navigateTo('capture')">
+            <span class="nav-icon">📷</span>
+            <span class="nav-label">ถ่ายภาพ</span>
+        </button>
+        <button class="nav-item" data-page="map" onclick="navigateTo('map')">
+            <span class="nav-icon">🗺️</span>
+            <span class="nav-label">แผนที่</span>
+        </button>
+        <button class="nav-item" data-page="gallery" onclick="navigateTo('gallery')">
+            <span class="nav-icon">📸</span>
+            <span class="nav-label">แกลเลอรี</span>
+        </button>
+    </nav>
+
+    <!-- ============ LOADING OVERLAY ============ -->
+    <div class="loading-overlay" id="loadingOverlay" style="display:none">
+        <div class="loading-spinner"></div>
+        <p class="loading-text" id="loadingText">กำลังดำเนินการ...</p>
+    </div>
+
+    <!-- ============ TOAST ============ -->
+    <div class="toast" id="toast"></div>
+
+    <!-- ============ SCRIPTS ============ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
