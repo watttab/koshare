@@ -182,6 +182,10 @@ function navigateTo(page, pushHash = true) {
     if (pushHash) location.hash = page;
     if (page === 'map') setTimeout(() => initMainMap(), 200);
     if (page === 'gallery') loadCheckIns(appState.galleryPage);
+    // Capture tab requires login
+    if (page === 'capture' && !appState.isLoggedIn) {
+        showLoginModal();
+    }
     window.scrollTo(0, 0);
 }
 
@@ -233,8 +237,10 @@ function setupNavigation() {
 }
 
 function setupPhotoInput() {
-    const input = document.getElementById('photoInput');
-    if (input) input.addEventListener('change', handlePhotoSelect);
+    const cam = document.getElementById('cameraInput');
+    const gal = document.getElementById('galleryInput');
+    if (cam) cam.addEventListener('change', handlePhotoSelect);
+    if (gal) gal.addEventListener('change', handlePhotoSelect);
 }
 
 function setupGPS() {
@@ -391,7 +397,7 @@ function incrementShareCount() {
 
 // ============ SAVE TO MAP ============
 async function saveToMap() {
-    if (!requireLogin()) return;
+    if (!appState.isLoggedIn) { showLoginModal(); return; }
     if (appState.latitude === null) { showToast('⚠️ ไม่มีพิกัด GPS'); return; }
     const locationName = document.getElementById('textLine2').value.trim();
     if (!locationName) { showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่'); return; }
