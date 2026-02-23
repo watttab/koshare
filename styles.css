@@ -863,35 +863,49 @@ body {
 }
 
 .composer-bottom {
-    text-align: center;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.composer-bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 12px;
+    padding: 10px 14px;
+    backdrop-filter: blur(4px);
 }
 
 .composer-qr {
     display: inline-block;
-    padding: 8px;
+    padding: 4px;
     background: white;
-    border-radius: 12px;
-    margin-bottom: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.composer-footer-text {
+    text-align: right;
 }
 
 .composer-scan-text {
-    font-size: 16px;
-    color: rgba(255, 255, 255, 0.8);
-    margin-bottom: 12px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 2px;
     font-weight: 300;
 }
 
 .composer-line3 {
-    font-size: 24px;
+    font-size: 14px;
     font-weight: 600;
     color: #ffffff;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-    margin-bottom: 8px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    margin-bottom: 2px;
 }
 
 .composer-brand {
-    font-size: 18px;
+    font-size: 11px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.5);
 }

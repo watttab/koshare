@@ -241,6 +241,9 @@ function setupPhotoInput() {
     const gal = document.getElementById('galleryInput');
     if (cam) cam.addEventListener('change', handlePhotoSelect);
     if (gal) gal.addEventListener('change', handlePhotoSelect);
+    // Clicking photo area triggers camera
+    const area = document.getElementById('photoArea');
+    if (area) area.addEventListener('click', () => { if (cam) cam.click(); });
 }
 
 function setupGPS() {
@@ -340,12 +343,44 @@ async function generateImage() {
     if (appState.latitude === null) { showToast('⚠️ กำลังรอ GPS...'); return; }
 
     showLoading('กำลังสร้างภาพ...');
-    initMiniMap();
-    await new Promise(r => setTimeout(r, 800));
 
     try {
-        const composer = document.getElementById('composerPreview');
+        // Update composer content
+        const line1 = document.getElementById('textLine1').value || 'แนะนำแหล่งเรียนรู้';
+        const line2 = document.getElementById('textLine2').value || 'ชื่อสถานที่';
+        const line3 = document.getElementById('textLine3').value || 'สกร.ระดับอำเภอโกสุมพิสัย';
+        document.getElementById('composerLine1').textContent = line1;
+        document.getElementById('composerLine2').textContent = line2;
+        document.getElementById('composerLine3').textContent = line3;
+
+        // Set photo as background
+        const composerPhoto = document.getElementById('composerPhoto');
+        composerPhoto.style.backgroundImage = `url(${appState.photoDataURL})`;
+
+        // Generate QR code
+        const qrContainer = document.getElementById('composerQR');
+        qrContainer.innerHTML = '';
+        const mapsUrl = `https://www.google.com/maps?q=${appState.latitude},${appState.longitude}`;
+        new QRCode(qrContainer, { text: mapsUrl, width: 80, height: 80, colorDark: '#ffffff', colorLight: 'transparent', correctLevel: QRCode.CorrectLevel.M });
+
+        // Show composer for rendering
+        const wrapper = document.getElementById('composerWrapper');
+        wrapper.style.display = 'block';
+        wrapper.style.position = 'absolute';
+        wrapper.style.left = '-9999px';
+
+        // Init mini map
+        initMiniMap();
+        await new Promise(r => setTimeout(r, 1000));
+
+        const composer = document.getElementById('imageComposer');
         const canvas = await html2canvas(composer, { useCORS: true, scale: 2, backgroundColor: null, logging: false });
+
+        // Hide composer
+        wrapper.style.display = 'none';
+        wrapper.style.position = '';
+        wrapper.style.left = '';
+
         appState.generatedImageDataURL = canvas.toDataURL('image/png');
         canvas.toBlob(blob => { appState.generatedImageBlob = blob; });
         document.getElementById('generatedImage').src = appState.generatedImageDataURL;
@@ -353,7 +388,11 @@ async function generateImage() {
         document.getElementById('previewArea').scrollIntoView({ behavior: 'smooth' });
         hideLoading();
         showToast('✅ สร้างภาพสำเร็จ!');
-    } catch (err) { hideLoading(); showToast('❌ สร้างภาพไม่สำเร็จ'); }
+    } catch (err) {
+        hideLoading();
+        console.error('generateImage error:', err);
+        showToast('❌ สร้างภาพไม่สำเร็จ: ' + (err.message || err));
+    }
 }
 
 function downloadImage() {
