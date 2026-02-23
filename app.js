@@ -361,7 +361,7 @@ async function generateImage() {
         const qrContainer = document.getElementById('composerQR');
         qrContainer.innerHTML = '';
         const mapsUrl = `https://www.google.com/maps?q=${appState.latitude},${appState.longitude}`;
-        new QRCode(qrContainer, { text: mapsUrl, width: 80, height: 80, colorDark: '#ffffff', colorLight: 'rgba(0,0,0,0)', correctLevel: QRCode.CorrectLevel.M });
+        new QRCode(qrContainer, { text: mapsUrl, width: 80, height: 80, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
 
         // Show composer for rendering
         const wrapper = document.getElementById('composerWrapper');
