@@ -110,6 +110,7 @@ function showLoginModal() {
 
 function hideLoginModal() {
     document.getElementById('loginModal').classList.remove('active');
+    appState._pendingCapture = false;
 }
 
 async function submitLogin() {
@@ -133,6 +134,11 @@ async function submitLogin() {
             hideLoginModal();
             updateAuthUI();
             showToast('🔓 เข้าสู่ระบบสำเร็จ!');
+            // Navigate to capture if that was the intent
+            if (appState._pendingCapture) {
+                appState._pendingCapture = false;
+                navigateTo('capture');
+            }
         } else {
             document.getElementById('loginError').textContent = result.error || 'PIN ไม่ถูกต้อง';
         }
@@ -172,6 +178,13 @@ function requireLogin() {
 
 // ============ NAVIGATION ============
 function navigateTo(page, pushHash = true) {
+    // Capture tab requires login - block navigation if not logged in
+    if (page === 'capture' && !appState.isLoggedIn) {
+        appState._pendingCapture = true;
+        showLoginModal();
+        return;
+    }
+
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const targetPage = document.getElementById('page' + capitalize(page));
     if (targetPage) targetPage.classList.add('active');
@@ -182,10 +195,6 @@ function navigateTo(page, pushHash = true) {
     if (pushHash) location.hash = page;
     if (page === 'map') setTimeout(() => initMainMap(), 200);
     if (page === 'gallery') loadCheckIns(appState.galleryPage);
-    // Capture tab requires login
-    if (page === 'capture' && !appState.isLoggedIn) {
-        showLoginModal();
-    }
     window.scrollTo(0, 0);
 }
 
