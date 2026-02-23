@@ -25,7 +25,7 @@ const appState = {
     galleryPage: 1,
     galleryTotalPages: 1,
     galleryTotal: 0,
-    galleryItemsPerPage: 20,
+    galleryItemsPerPage: 10,
     gallerySearchQuery: '',
     // Auth
     authToken: localStorage.getItem('koShareToken') || '',
@@ -351,7 +351,7 @@ async function generateImage() {
         const line3 = document.getElementById('textLine3').value || 'สกร.ระดับอำเภอโกสุมพิสัย';
         document.getElementById('composerLine1').textContent = line1;
         document.getElementById('composerLine2').textContent = line2;
-        document.getElementById('composerLine3').textContent = line3;
+        document.getElementById('composerLine3').textContent = document.getElementById('textLine2').value || 'ชื่อสถานที่';
 
         // Set photo as background
         const composerPhoto = document.getElementById('composerPhoto');
@@ -368,6 +368,7 @@ async function generateImage() {
         wrapper.style.display = 'block';
         wrapper.style.position = 'absolute';
         wrapper.style.left = '-9999px';
+        wrapper.style.top = '0';
 
         // Init mini map
         initMiniMap();
@@ -380,18 +381,17 @@ async function generateImage() {
         wrapper.style.display = 'none';
         wrapper.style.position = '';
         wrapper.style.left = '';
+        wrapper.style.top = '';
 
         appState.generatedImageDataURL = canvas.toDataURL('image/png');
         canvas.toBlob(blob => { appState.generatedImageBlob = blob; });
         document.getElementById('generatedImage').src = appState.generatedImageDataURL;
         document.getElementById('previewArea').style.display = 'block';
         document.getElementById('previewArea').scrollIntoView({ behavior: 'smooth' });
-        hideLoading();
-        showToast('✅ สร้างภาพสำเร็จ!');
+        Swal.fire({ icon: 'success', title: 'สร้างภาพสำเร็จ!', text: 'กดบันทึกลงแผนที่เพื่อบันทึกข้อมูล', timer: 2500, showConfirmButton: false });
     } catch (err) {
-        hideLoading();
         console.error('generateImage error:', err);
-        showToast('❌ สร้างภาพไม่สำเร็จ: ' + (err.message || err));
+        Swal.fire({ icon: 'error', title: 'สร้างภาพไม่สำเร็จ', text: err.message || String(err), confirmButtonText: 'ตกลง' });
     }
 }
 
@@ -437,11 +437,11 @@ function incrementShareCount() {
 // ============ SAVE TO MAP ============
 async function saveToMap() {
     if (!appState.isLoggedIn) { showLoginModal(); return; }
-    if (appState.latitude === null) { showToast('⚠️ ไม่มีพิกัด GPS'); return; }
+    if (appState.latitude === null) { Swal.fire({ icon: 'warning', title: 'ไม่มีพิกัด GPS', text: 'กรุณาเปิด GPS และรอสักครู่', confirmButtonText: 'ตกลง' }); return; }
     const locationName = document.getElementById('textLine2').value.trim();
-    if (!locationName) { showToast('⚠️ กรุณาพิมพ์ชื่อสถานที่'); return; }
+    if (!locationName) { Swal.fire({ icon: 'warning', title: 'กรุณาพิมพ์ชื่อสถานที่', confirmButtonText: 'ตกลง' }); return; }
 
-    showLoading('กำลังบันทึก...');
+    Swal.fire({ title: 'กำลังบันทึก...', text: 'กรุณารอสักครู่', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     try {
         const data = {
             locationName,
@@ -455,12 +455,10 @@ async function saveToMap() {
         const result = await callGAS(action, data, true);
         if (!result.success) throw new Error(result.error || 'Save failed');
 
-        hideLoading();
-        showToast('📌 บันทึกสำเร็จ!');
+        Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ!', text: `${locationName} ถูกบันทึกลงแผนที่แล้ว`, timer: 2500, showConfirmButton: false });
         setTimeout(() => loadCheckIns(1), 1500);
     } catch (err) {
-        hideLoading();
-        showToast('❌ ' + err.message);
+        Swal.fire({ icon: 'error', title: 'บันทึกไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
     }
 }
 
@@ -623,7 +621,13 @@ function initMainMap() {
 }
 
 async function loadAllForMap() {
-    // Load all check-ins for the map (without pagination limit)
+    // Clear existing markers first
+    if (appState.mainMapMarkers) {
+        appState.mainMapMarkers.clearLayers();
+    }
+    appState._mapMarkerIds = new Set(); // Track added IDs to prevent duplicates
+
+    // Load all check-ins for the map
     try {
         const url = `${GAS_URL}?action=getCheckIns&page=1&limit=100`;
         const resp = await fetch(url, { redirect: 'follow' });
@@ -650,6 +654,7 @@ function addCheckInMarkers() {
 
 function addCheckInMarkersFromData(data) {
     if (!appState.mainMap) return;
+    if (!appState._mapMarkerIds) appState._mapMarkerIds = new Set();
 
     const cluster = appState.mainMapMarkers;
     const useCluster = cluster && typeof cluster.addLayer === 'function';
@@ -658,6 +663,10 @@ function addCheckInMarkersFromData(data) {
     data.forEach(i => {
         const lat = Number(i.latitude), lng = Number(i.longitude);
         if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
+        // Skip duplicates
+        const markerId = i.id || `${lat},${lng}`;
+        if (appState._mapMarkerIds.has(markerId)) return;
+        appState._mapMarkerIds.add(markerId);
         const url = `https://www.google.com/maps?q=${lat},${lng}`;
         const m = L.marker([lat, lng]);
         m.bindPopup(`<div class="popup-title">📍 ${escapeHtml(i.locationName)}</div>
