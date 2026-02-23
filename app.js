@@ -330,7 +330,6 @@ function updatePreview() {
 }
 
 async function generateImage() {
-    if (!requireLogin()) return;
     if (!appState.photoDataURL) { showToast('⚠️ กรุณาถ่ายภาพก่อน'); return; }
     if (appState.latitude === null) { showToast('⚠️ กำลังรอ GPS...'); return; }
 
