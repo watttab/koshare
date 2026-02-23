@@ -201,7 +201,7 @@ function handlePhotoSelect(e) {
         const img = new Image();
         img.onload = () => {
             appState.photoDataURL = compressToDataURL(img, 1600, 0.85);
-            appState.photoThumbnail = compressToDataURL(img, 200, 0.3);
+            appState.photoThumbnail = compressToDataURL(img, 100, 0.15);
             document.getElementById('photoPreview').src = appState.photoDataURL;
             document.getElementById('photoPreview').style.display = 'block';
             document.getElementById('photoPlaceholder').style.display = 'none';
@@ -361,7 +361,7 @@ async function generateImage() {
         const qrContainer = document.getElementById('composerQR');
         qrContainer.innerHTML = '';
         const mapsUrl = `https://www.google.com/maps?q=${appState.latitude},${appState.longitude}`;
-        new QRCode(qrContainer, { text: mapsUrl, width: 80, height: 80, colorDark: '#ffffff', colorLight: 'transparent', correctLevel: QRCode.CorrectLevel.M });
+        new QRCode(qrContainer, { text: mapsUrl, width: 80, height: 80, colorDark: '#ffffff', colorLight: 'rgba(0,0,0,0)', correctLevel: QRCode.CorrectLevel.M });
 
         // Show composer for rendering
         const wrapper = document.getElementById('composerWrapper');
