@@ -24,6 +24,8 @@
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 
     <!-- App CSS -->
     <link rel="stylesheet" href="styles.css">
@@ -36,7 +38,14 @@
             <span class="header-pin">📍</span>
             <h1 class="header-title">Ko Share</h1>
         </div>
-        <div class="header-stats">
+        <div class="header-actions">
+            <button class="header-auth-btn" id="headerLoginBtn" onclick="showLoginModal()" title="เข้าสู่ระบบ">
+                🔒
+            </button>
+            <button class="header-auth-btn header-auth-logged" id="headerLogoutBtn" onclick="logout()"
+                style="display:none" title="ออกจากระบบ">
+                🔓
+            </button>
             <div class="visit-badge" id="visitBadge">
                 <span class="visit-icon">👁️</span>
                 <span class="visit-count" id="visitCount">—</span>
@@ -320,10 +329,31 @@
     <!-- ============ TOAST ============ -->
     <div class="toast" id="toast"></div>
 
+    <!-- ============ LOGIN MODAL ============ -->
+    <div class="login-modal" id="loginModal">
+        <div class="login-backdrop" onclick="hideLoginModal()"></div>
+        <div class="login-card">
+            <div class="login-header">
+                <span class="login-icon">🔐</span>
+                <h2>เข้าสู่ระบบ</h2>
+                <p>กรอก PIN เพื่อใช้งาน</p>
+            </div>
+            <div class="login-form">
+                <input type="password" id="pinInput" class="pin-input" placeholder="● ● ● ●" maxlength="6"
+                    inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+                    onkeydown="if(event.key==='Enter')submitLogin()">
+                <div class="login-error" id="loginError"></div>
+                <button class="btn-login" id="loginBtn" onclick="submitLogin()">เข้าสู่ระบบ</button>
+                <button class="btn-login-cancel" onclick="hideLoginModal()">ยกเลิก</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ============ SCRIPTS ============ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="app.js"></script>
 </body>
 
