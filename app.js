@@ -817,8 +817,10 @@ async function changePinUI() {
     }
 }
 
-// ============ EXPORT CSV ============
-async function exportCSV() {
+// ============ EXPORT PDF ============
+async function exportPDF() {
+    if (!appState.isLoggedIn) { showLoginModal(); return; }
+
     Swal.fire({ title: 'กำลังโหลดข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     try {
         let all = [];
@@ -839,29 +841,68 @@ async function exportCSV() {
             return;
         }
 
-        const headers = ['ลำดับ', 'ชื่อสถานที่', 'หมวดหมู่', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'ลิงก์ Google Maps', 'วันที่บันทึก'];
-        const rows = all.map((item, idx) => [
-            idx + 1,
-            `"${(item.locationName || '').replace(/"/g, '""')}"`,
-            `"${item.category || 'อื่นๆ'}"`,
-            `"${(item.description || '').replace(/"/g, '""')}"`,
-            item.latitude,
-            item.longitude,
-            `"https://www.google.com/maps?q=${item.latitude},${item.longitude}"`,
-            `"${item.timestamp ? new Date(item.timestamp).toLocaleDateString('th-TH') : ''}"`
-        ]);
+        const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+        const rows = all.map((item, idx) => {
+            const cat = item.category || 'อื่นๆ';
+            const catEmoji = getCategoryEmoji(cat);
+            return `<tr>
+                <td style="text-align:center">${idx + 1}</td>
+                <td>${item.locationName || ''}</td>
+                <td style="text-align:center">${catEmoji} ${cat}</td>
+                <td>${item.description || '-'}</td>
+                <td style="font-size:10px">${Number(item.latitude).toFixed(4)}, ${Number(item.longitude).toFixed(4)}</td>
+                <td style="text-align:center"><a href="https://www.google.com/maps?q=${item.latitude},${item.longitude}" target="_blank">🗺️</a></td>
+                <td style="text-align:center;font-size:11px">${item.timestamp ? new Date(item.timestamp).toLocaleDateString('th-TH') : '-'}</td>
+            </tr>`;
+        }).join('');
 
-        const bom = '\uFEFF';
-        const csv = bom + headers.join(',') + '\n' + rows.map(r => r.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `koshare_${new Date().toISOString().slice(0, 10)}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+        const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>รายงานแหล่งเรียนรู้ — Ko Share</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Prompt', sans-serif; padding: 24px; color: #1a1a1a; }
+    .header { text-align: center; margin-bottom: 24px; border-bottom: 3px solid #1e3a5f; padding-bottom: 16px; }
+    .header h1 { font-size: 20px; color: #1e3a5f; margin-bottom: 4px; }
+    .header h2 { font-size: 16px; font-weight: 400; color: #555; margin-bottom: 4px; }
+    .header .date { font-size: 12px; color: #888; }
+    .summary { display: flex; justify-content: center; gap: 32px; margin-bottom: 20px; }
+    .summary-item { text-align: center; }
+    .summary-item .num { font-size: 28px; font-weight: 700; color: #1e3a5f; }
+    .summary-item .label { font-size: 11px; color: #666; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #1e3a5f; color: white; padding: 8px 6px; font-weight: 600; font-size: 12px; }
+    td { padding: 6px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+    tr:nth-child(even) { background: #f8f9fa; }
+    tr:hover { background: #e8f0fe; }
+    a { color: #1e3a5f; text-decoration: none; }
+    .footer { text-align: center; margin-top: 24px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 12px; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+</style></head><body>
+<div class="header">
+    <h1>📍 รายงานแหล่งเรียนรู้</h1>
+    <h2>สกร.ระดับอำเภอโกสุมพิสัย</h2>
+    <div class="date">ข้อมูล ณ วันที่ ${today} — รวม ${all.length} แห่ง</div>
+</div>
+<div class="summary">
+    <div class="summary-item"><div class="num">${all.filter(i => (i.category || '') === 'สถานที่').length}</div><div class="label">📍 สถานที่</div></div>
+    <div class="summary-item"><div class="num">${all.filter(i => (i.category || '') === 'บุคคล').length}</div><div class="label">👤 บุคคล</div></div>
+    <div class="summary-item"><div class="num">${all.filter(i => (i.category || '') === 'สื่อและนวัตกรรม').length}</div><div class="label">💡 สื่อฯ</div></div>
+</div>
+<table>
+    <thead><tr><th>ที่</th><th>ชื่อแหล่งเรียนรู้</th><th>ประเภท</th><th>รายละเอียด</th><th>พิกัด</th><th>แผนที่</th><th>วันที่</th></tr></thead>
+    <tbody>${rows}</tbody>
+</table>
+<div class="footer">สร้างโดย Ko Share — https://watttab.github.io/koshare/</div>
+<div class="no-print" style="text-align:center;margin-top:20px">
+    <button onclick="window.print()" style="padding:12px 32px;font-size:16px;font-family:Prompt;background:#1e3a5f;color:white;border:none;border-radius:8px;cursor:pointer">🖨️ พิมพ์ / บันทึก PDF</button>
+</div>
+</body></html>`;
 
-        Swal.fire({ icon: 'success', title: 'Export สำเร็จ!', text: `${all.length} รายการ`, timer: 2000, showConfirmButton: false });
+        const win = window.open('', '_blank');
+        win.document.write(html);
+        win.document.close();
+        Swal.close();
     } catch (err) {
         Swal.fire({ icon: 'error', title: 'Export ไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
     }
