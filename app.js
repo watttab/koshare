@@ -457,6 +457,7 @@ async function saveToMap() {
             latitude: appState.latitude,
             longitude: appState.longitude,
             description: document.getElementById('textDescription').value.trim(),
+            category: document.getElementById('categorySelect').value || 'อื่นๆ',
         };
         if (appState.photoThumbnail) data.thumbnail = appState.photoThumbnail;
 
@@ -483,6 +484,9 @@ async function incrementVisitCount() {
 }
 
 async function loadCheckIns(page) {
+    const c = document.getElementById('galleryGrid');
+    // Show skeleton loading
+    if (c) c.innerHTML = Array(4).fill('<div class="gallery-card skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div></div>').join('');
     try {
         let url = `${GAS_URL}?action=getCheckIns&page=${page || 1}&limit=${appState.galleryItemsPerPage}`;
         const resp = await fetch(url, { redirect: 'follow' });
@@ -541,16 +545,23 @@ function renderGalleryGrid() {
     c.innerHTML = list.map(i => {
         const lat = Number(i.latitude), lng = Number(i.longitude), n = escapeHtml(i.locationName || '');
         const d = escapeHtml(i.description || '');
+        const cat = i.category || 'อื่นๆ';
+        const catEmoji = getCategoryEmoji(cat);
         const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
-        return `<div class="gallery-card" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')">
-            <div class="gallery-card-image" style="display:flex;align-items:center;justify-content:center;overflow:hidden;">
+        const deleteBtn = appState.isLoggedIn ? `<button class="btn-delete-card" onclick="event.stopPropagation();confirmDelete('${i.id}','${n.replace(/'/g, "\\'")}')" title="ลบ">×</button>` : '';
+        return `<div class="gallery-card">
+            ${deleteBtn}
+            <div class="gallery-card-image" onclick="showOnMap(${lat},${lng},'${n.replace(/'/g, "\\'")}')" style="display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer">
                 <img class="thumb-lazy" data-thumb-id="${i.id}" src=""
                      style="width:100%;height:100%;object-fit:cover;background:var(--bg-secondary)"
-                     onerror="this.outerHTML='<div style=display:flex;align-items:center;justify-content:center;font-size:32px;width:100%;height:100%>📍</div>'">
+                     onerror="this.outerHTML='<div style=display:flex;align-items:center;justify-content:center;font-size:32px;width:100%;height:100%>${catEmoji}</div>'">
             </div>
             <div class="gallery-card-info">
                 <div class="gallery-card-name">${n}</div>
                 <div class="gallery-card-date">${formatDate(i.timestamp)}</div>
+                <div style="display:flex;align-items:center;gap:4px;margin-top:2px">
+                    <span class="category-badge">${catEmoji} ${escapeHtml(cat)}</span>
+                </div>
                 ${d ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${d}</div>` : ''}
                 <a href="${mapsUrl}" target="_blank" style="font-size:11px;color:var(--accent-primary);text-decoration:none;display:block;margin-top:2px;" onclick="event.stopPropagation()">🗺️ นำทาง</a>
             </div></div>`;
@@ -734,4 +745,68 @@ function showLoading(msg) {
 function hideLoading() {
     const o = document.getElementById('loadingOverlay');
     if (o) o.classList.remove('show');
+}
+
+// ============ CATEGORY HELPERS ============
+function getCategoryEmoji(cat) {
+    const map = {
+        'วัด': '🏛️', 'โรงเรียน': '🏫', 'ตลาด': '🏪',
+        'สวนสาธารณะ': '🌳', 'สถานที่ราชการ': '🏢',
+        'แหล่งเรียนรู้': '📚', 'อื่นๆ': '📍'
+    };
+    return map[cat] || '📍';
+}
+
+// ============ DELETE ============
+async function confirmDelete(id, name) {
+    if (!appState.isLoggedIn) { showLoginModal(); return; }
+    const result = await Swal.fire({
+        title: 'ลบสถานที่นี้?',
+        text: name,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'ลบ',
+        cancelButtonText: 'ยกเลิก'
+    });
+    if (!result.isConfirmed) return;
+
+    Swal.fire({ title: 'กำลังลบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    try {
+        const url = `${GAS_URL}?action=deleteCheckIn&id=${encodeURIComponent(id)}&token=${encodeURIComponent(appState.authToken)}`;
+        const resp = await fetch(url, { redirect: 'follow' });
+        const res = JSON.parse(await resp.text());
+        if (!res.success) throw new Error(res.error);
+        Swal.fire({ icon: 'success', title: 'ลบสำเร็จ!', timer: 1500, showConfirmButton: false });
+        loadCheckIns(appState.galleryPage);
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'ลบไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
+    }
+}
+
+// ============ CHANGE PIN ============
+async function changePinUI() {
+    if (!appState.isLoggedIn) { showLoginModal(); return; }
+    const { value: newPin } = await Swal.fire({
+        title: 'เปลี่ยน PIN',
+        input: 'text',
+        inputLabel: 'PIN ใหม่ (4-6 หลัก)',
+        inputAttributes: { maxlength: 6, inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off' },
+        inputValidator: (v) => { if (!v || v.length < 4) return 'PIN ต้องมี 4-6 หลัก'; },
+        showCancelButton: true,
+        confirmButtonText: 'เปลี่ยน',
+        cancelButtonText: 'ยกเลิก'
+    });
+    if (!newPin) return;
+
+    Swal.fire({ title: 'กำลังเปลี่ยน PIN...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    try {
+        const url = `${GAS_URL}?action=changePin&newPin=${encodeURIComponent(newPin)}&token=${encodeURIComponent(appState.authToken)}`;
+        const resp = await fetch(url, { redirect: 'follow' });
+        const res = JSON.parse(await resp.text());
+        if (!res.success) throw new Error(res.error);
+        Swal.fire({ icon: 'success', title: 'เปลี่ยน PIN สำเร็จ!', text: 'PIN ใหม่: ' + newPin, timer: 2500, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'เปลี่ยนไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
+    }
 }

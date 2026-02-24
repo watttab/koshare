@@ -32,7 +32,7 @@ function ensureSheets() {
   var checkInsSheet = ss.getSheetByName('CheckIns');
   if (!checkInsSheet) {
     checkInsSheet = ss.insertSheet('CheckIns');
-    checkInsSheet.appendRow(['id', 'locationName', 'latitude', 'longitude', 'timestamp', 'description']);
+    checkInsSheet.appendRow(['id', 'locationName', 'latitude', 'longitude', 'timestamp', 'description', 'category']);
   }
 
   var thumbSheet = ss.getSheetByName('Thumbnails');
@@ -62,7 +62,7 @@ function handleRequest(e) {
 
   try {
     // Actions that require login token
-    var authActions = ['saveCheckIn', 'saveWithImage', 'deleteCheckIn'];
+    var authActions = ['saveCheckIn', 'saveWithImage', 'deleteCheckIn', 'changePin'];
     if (authActions.indexOf(action) > -1) {
       var token = params.token || '';
       if (!verifyToken(token)) {
@@ -91,9 +91,12 @@ function handleRequest(e) {
       case 'saveCheckIn': result = saveCheckIn(parseData(params, e)); break;
       case 'saveWithImage': result = saveWithImage(parseData(params, e)); break;
       case 'deleteCheckIn': result = deleteCheckIn(params.id); break;
+      case 'changePin': result = changePin(params.newPin, params.token); break;
 
       // === ADMIN ===
       case 'setPin': result = setPin(params.pin); break;
+      case 'migrateThumbnails': result = migrateThumbnails(); break;
+      case 'cleanupTestData': result = cleanupTestData(); break;
 
       default:
         result = { success: false, error: 'Unknown action: ' + action };
@@ -173,6 +176,16 @@ function verifyToken(token) {
 
 function doVerifyToken(token) {
   return { success: true, data: { valid: verifyToken(token) } };
+}
+
+function changePin(newPin, token) {
+  if (!newPin || newPin.length < 4 || newPin.length > 6) {
+    return { success: false, error: 'PIN ต้อง 4-6 หลัก' };
+  }
+  var hashed = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, newPin + '_KOSHARE_SALT');
+  var hexHash = hashed.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+  PropertiesService.getScriptProperties().setProperty('PIN_HASH', hexHash);
+  return { success: true, message: 'เปลี่ยน PIN สำเร็จ' };
 }
 
 // ============ STATS ============
@@ -289,7 +302,8 @@ function saveCheckIn(data) {
     parseFloat(data.latitude) || 0,
     parseFloat(data.longitude) || 0,
     ts,
-    sanitize(data.description, 300)
+    sanitize(data.description, 300),
+    sanitize(data.category, 50) || 'อื่นๆ'
   ]);
 
   return {
@@ -316,7 +330,8 @@ function saveWithImage(data) {
     parseFloat(data.latitude) || 0,
     parseFloat(data.longitude) || 0,
     ts,
-    sanitize(data.description, 300)
+    sanitize(data.description, 300),
+    sanitize(data.category, 50) || 'อื่นๆ'
   ]);
 
   // Save thumbnail to separate Thumbnails sheet
@@ -364,4 +379,60 @@ function deleteCheckIn(id) {
 function sanitize(str, maxLen) {
   if (!str) return '';
   return String(str).replace(/<[^>]*>/g, '').replace(/[<>"']/g, '').trim().substring(0, maxLen || 200);
+}
+
+// ============ MIGRATION & CLEANUP ============
+function migrateThumbnails() {
+  var sheets = ensureSheets();
+  var ciData = sheets.checkInsSheet.getDataRange().getValues();
+  var ciHeaders = ciData[0];
+  var migrated = 0;
+
+  // Find imageUrl or thumbnail columns
+  for (var i = 1; i < ciData.length; i++) {
+    var id = ciData[i][0];
+    for (var j = 0; j < ciHeaders.length; j++) {
+      var col = ciHeaders[j];
+      if ((col === 'imageUrl' || col === 'thumbnail' || col === 'thumbnailUrl') && ciData[i][j]) {
+        var val = String(ciData[i][j]);
+        if (val.indexOf('data:image') === 0) {
+          // Check if already in Thumbnails
+          var thumbData = sheets.thumbSheet.getDataRange().getValues();
+          var exists = false;
+          for (var t = 1; t < thumbData.length; t++) {
+            if (thumbData[t][0] === id) { exists = true; break; }
+          }
+          if (!exists) {
+            sheets.thumbSheet.appendRow([id, val]);
+            migrated++;
+          }
+        }
+      }
+    }
+  }
+  return { success: true, message: 'Migrated ' + migrated + ' thumbnails' };
+}
+
+function cleanupTestData() {
+  var sheets = ensureSheets();
+  var ciData = sheets.checkInsSheet.getDataRange().getValues();
+  var testNames = ['ทดสอบ', 'TestAPI', 'TestLocation', 'วัดทดสอบ', 'test', 'ทดสอบบันทึกภาพ', 'รถ'];
+  var deleted = 0;
+
+  for (var i = ciData.length - 1; i >= 1; i--) {
+    var name = String(ciData[i][1]).trim();
+    if (testNames.indexOf(name) > -1) {
+      var id = ciData[i][0];
+      sheets.checkInsSheet.deleteRow(i + 1);
+      // Also delete from Thumbnails
+      var thumbData = sheets.thumbSheet.getDataRange().getValues();
+      for (var t = thumbData.length - 1; t >= 1; t--) {
+        if (thumbData[t][0] === id) {
+          sheets.thumbSheet.deleteRow(t + 1);
+        }
+      }
+      deleted++;
+    }
+  }
+  return { success: true, message: 'Deleted ' + deleted + ' test entries' };
 }
