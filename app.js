@@ -899,14 +899,28 @@ async function exportPDF() {
 </div>
 </body></html>`;
 
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `koshare_report_${new Date().toISOString().slice(0, 10)}.html`;
-        a.click();
-        URL.revokeObjectURL(url);
-        Swal.fire({ icon: 'success', title: 'ดาวน์โหลดสำเร็จ!', text: 'เปิดไฟล์แล้วกด พิมพ์ → Save as PDF', timer: 3000, showConfirmButton: true, confirmButtonText: 'ตกลง' });
+        Swal.fire({ title: 'กำลังสร้าง PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        // Create hidden container, render html2pdf
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        container.style.position = 'absolute';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.width = '210mm';
+        container.style.background = 'white';
+        document.body.appendChild(container);
+
+        await html2pdf().set({
+            margin: [10, 10, 10, 10],
+            filename: `koshare_report_${new Date().toISOString().slice(0, 10)}.pdf`,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).from(container).save();
+
+        document.body.removeChild(container);
+        Swal.fire({ icon: 'success', title: 'ดาวน์โหลด PDF สำเร็จ!', timer: 2000, showConfirmButton: false });
     } catch (err) {
         Swal.fire({ icon: 'error', title: 'Export ไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
     }
