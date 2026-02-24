@@ -899,10 +899,14 @@ async function exportPDF() {
 </div>
 </body></html>`;
 
-        const win = window.open('', '_blank');
-        win.document.write(html);
-        win.document.close();
-        Swal.close();
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `koshare_report_${new Date().toISOString().slice(0, 10)}.html`;
+        a.click();
+        URL.revokeObjectURL(url);
+        Swal.fire({ icon: 'success', title: 'ดาวน์โหลดสำเร็จ!', text: 'เปิดไฟล์แล้วกด พิมพ์ → Save as PDF', timer: 3000, showConfirmButton: true, confirmButtonText: 'ตกลง' });
     } catch (err) {
         Swal.fire({ icon: 'error', title: 'Export ไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
     }
