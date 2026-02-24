@@ -8,6 +8,8 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
 
     <!-- Open Graph -->
     <meta property="og:title" content="Ko Share — แนะนำแหล่งเรียนรู้">
@@ -288,8 +290,13 @@
         <!-- GALLERY PAGE -->
         <section class="page" id="pageGallery">
             <div class="gallery-header">
-                <h3>📸 แกลเลอรีแหล่งเรียนรู้</h3>
-                <p class="gallery-count" id="galleryCount"></p>
+                <div>
+                    <h3>📸 แกลเลอรีแหล่งเรียนรู้</h3>
+                    <p class="gallery-count" id="galleryCount"></p>
+                </div>
+                <button class="btn btn-outline btn-export" onclick="exportCSV()">
+                    📥 Export CSV
+                </button>
             </div>
             <!-- Search Bar -->
             <div class="gallery-search">

@@ -1510,3 +1510,17 @@ body {
     color: var(--accent-primary);
     font-weight: 500;
 }
+
+/* ============ GALLERY HEADER + EXPORT ============ */
+.gallery-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.btn-export {
+    font-size: 12px;
+    padding: 6px 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}

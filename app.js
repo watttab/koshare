@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupGPS();
     setupSearch();
     initThumbObserver();
+    registerSW();
 
     // Check auth token
     if (appState.authToken) {
@@ -58,6 +59,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hash = location.hash.replace('#', '') || 'home';
     navigateTo(hash, false);
 });
+
+function registerSW() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW:', err));
+    }
+}
 
 // ============ API CALLS ============
 async function callGAS(action, data, requiresToken) {
@@ -807,5 +814,55 @@ async function changePinUI() {
         Swal.fire({ icon: 'success', title: 'เปลี่ยน PIN สำเร็จ!', text: 'PIN ใหม่: ' + newPin, timer: 2500, showConfirmButton: false });
     } catch (err) {
         Swal.fire({ icon: 'error', title: 'เปลี่ยนไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
+    }
+}
+
+// ============ EXPORT CSV ============
+async function exportCSV() {
+    Swal.fire({ title: 'กำลังโหลดข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    try {
+        let all = [];
+        let page = 1, totalPages = 1;
+        while (page <= totalPages && page <= 10) {
+            const url = `${GAS_URL}?action=getCheckIns&page=${page}&limit=100`;
+            const resp = await fetch(url, { redirect: 'follow' });
+            const result = JSON.parse(await resp.text());
+            if (result.success) {
+                all = all.concat(result.data || []);
+                totalPages = result.pagination.totalPages;
+            }
+            page++;
+        }
+
+        if (!all.length) {
+            Swal.fire({ icon: 'info', title: 'ไม่มีข้อมูล', confirmButtonText: 'ตกลง' });
+            return;
+        }
+
+        const headers = ['ลำดับ', 'ชื่อสถานที่', 'หมวดหมู่', 'รายละเอียด', 'ละติจูด', 'ลองจิจูด', 'ลิงก์ Google Maps', 'วันที่บันทึก'];
+        const rows = all.map((item, idx) => [
+            idx + 1,
+            `"${(item.locationName || '').replace(/"/g, '""')}"`,
+            `"${item.category || 'อื่นๆ'}"`,
+            `"${(item.description || '').replace(/"/g, '""')}"`,
+            item.latitude,
+            item.longitude,
+            `"https://www.google.com/maps?q=${item.latitude},${item.longitude}"`,
+            `"${item.timestamp ? new Date(item.timestamp).toLocaleDateString('th-TH') : ''}"`
+        ]);
+
+        const bom = '\uFEFF';
+        const csv = bom + headers.join(',') + '\n' + rows.map(r => r.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `koshare_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        Swal.fire({ icon: 'success', title: 'Export สำเร็จ!', text: `${all.length} รายการ`, timer: 2000, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Export ไม่สำเร็จ', text: err.message, confirmButtonText: 'ตกลง' });
     }
 }

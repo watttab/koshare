@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e3a5f"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="url(#bg)"/>
+  <g transform="translate(96,85)">
+    <path d="M0-45C-22-45-40-27-40-5c0 30 40 65 40 65s40-35 40-65C40-27 22-45 0-45z" fill="#3b82f6"/>
+    <circle cx="0" cy="-5" r="14" fill="white"/>
+  </g>
+  <text x="96" y="165" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="bold" fill="white" opacity="0.9">Ko Share</text>
+</svg>
